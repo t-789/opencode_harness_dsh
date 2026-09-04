@@ -1,0 +1,4 @@
+# 工具依赖边界:只忽略可再生的 node_modules;
+# package.json 与 bun.lock 属于安装产物分发面(install.sh standalone 会复制它们),必须追踪。
+node_modules/
+package-lock.json

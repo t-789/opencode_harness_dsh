@@ -1,0 +1,14 @@
+{
+  "name": "deepseek-delegate-opencode-tools",
+  "private": true,
+  "type": "module",
+  "description": "Dependency boundary for opencode custom tools under .opencode/tools. Versions mirror root package.json; @opencode-ai/plugin is pinned to the installed API version (1.4.3) and zod is pinned to 4.1.8 to dedupe against @opencode-ai/plugin's own zod dependency.",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.0",
+    "zod": "4.1.8"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.27"
+  }
+}

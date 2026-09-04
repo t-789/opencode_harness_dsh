@@ -1,8 +1,44 @@
-# Evidence and delegation state (audit artifacts, never committed)
-.omo/evidence/
-.omo/deepseek-delegate/
-.omo/start-work/
-
-# Dependencies and secrets
+# ---------- 依赖与构建产物 ----------
 node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# ---------- 锁文件策略 ----------
+# 根 bun.lock 必须追踪:install.sh(standalone)与 README 安装流程都依赖它
+# 复现连贯的 @deepseek-ai rc.5 依赖闭包。
+# 同理追踪 .opencode/package.json 与 .opencode/bun.lock(工具依赖边界)。
+
+# ---------- 运行时状态与审计(机器本地,永不提交)----------
+# deepseek_delegate 的任务状态与审计记录(含 context_hash、本机路径)
+.omo/deepseek-delegate/
+# 工作流编排状态:证据、start-work ledger、会话续接记录
+.omo/evidence/
+.omo/start-work/
+.omo/run-continuation/
+
+# ---------- 密钥 ----------
 .env
+.env.*
+*.pem
+*.key
+
+# ---------- 系统与编辑器 ----------
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# ---------- 安装脚本产物 ----------
+# install.sh 覆盖旧文件时的时间戳备份(*.bak.YYYYmmdd-HHMMSS)
+*.bak.*
+
+# ---------- 本地草稿 ----------
+*.local.md
+/scratch/
