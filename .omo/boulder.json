@@ -1,0 +1,171 @@
+{
+  "schema_version": 2,
+  "active_work_id": "deepseek-delegation-tool-74f8dd80",
+  "works": {
+    "deepseek-delegation-tool-74f8dd80": {
+      "work_id": "deepseek-delegation-tool-74f8dd80",
+      "active_plan": "/Users/liuzy/opencode_harness_dsh/.omo/plans/deepseek-delegation-tool.md",
+      "plan_name": "deepseek-delegation-tool",
+      "status": "completed",
+      "started_at": "2026-09-04T03:19:31.335Z",
+      "updated_at": "2026-09-04T05:30:14.616Z",
+      "completed_at": "2026-09-04T06:45:00Z",
+      "elapsed_ms": 7843281,
+      "session_ids": [
+        "opencode:ses_f95d6898fffeF6mZi6YoH5Op03"
+      ],
+      "session_origins": {
+        "opencode:ses_f95d6898fffeF6mZi6YoH5Op03": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "T1": {
+          "session": "ses_f958ee40affeaoGSoMfBkW22ae",
+          "status": "completed"
+        },
+        "T2": {
+          "session": "ses_f95893306ffes8UiOQoB9r05Ty",
+          "status": "completed"
+        },
+        "T3": {
+          "session": "ses_f958900c0ffeevsBlQth2nfKb7",
+          "status": "completed"
+        },
+        "T4": {
+          "session": "ses_f9588d884ffeANkOF4RKu7GnYS",
+          "status": "completed"
+        },
+        "T5": {
+          "session": "ses_f956fbb8cffev1ku59dH0XA6K0",
+          "status": "completed"
+        },
+        "T6": {
+          "session": "ses_f95563006ffeA2p8F0nkCOzvKm",
+          "status": "completed"
+        },
+        "T7": {
+          "session": "ses_f954374c3ffeTsUiYsFYY3Yl1j",
+          "status": "completed"
+        },
+        "T8": {
+          "session": "ses_f956f9546ffeTAH4R2JNO7QymV",
+          "status": "completed"
+        },
+        "T9": {
+          "session": "ses_f956f68dcffeZ90RRoTaPhR1uC",
+          "status": "completed"
+        },
+        "T10": {
+          "session": "ses_f9538ae75fferUXi4JKa5i1uPy",
+          "status": "completed"
+        },
+        "T11": {
+          "session": "ses_f952f67c9ffev030GX8rl2xWFf",
+          "status": "completed"
+        },
+        "T12": {
+          "session": "ses_f9527cd3affe4ifwBpqEocP0ZK",
+          "status": "completed"
+        },
+        "F1": {
+          "session": "ses_f951fd1f2ffe50jQr1c3BL0VVF",
+          "status": "approved"
+        },
+        "F2": {
+          "session": "ses_f951fbbccffeN0zvJZqe9IOVSr",
+          "status": "approved"
+        },
+        "F3": {
+          "session": "ses_f951fa3f6ffemW3waEKRplFUsD",
+          "status": "approved"
+        },
+        "F4": {
+          "session": "ses_f951f8e0dffeQMItpztG4e8RaB",
+          "status": "approved"
+        }
+      },
+      "ended_at": "2026-09-04T05:30:14.616Z"
+    }
+  },
+  "active_plan": "/Users/liuzy/opencode_harness_dsh/.omo/plans/deepseek-delegation-tool.md",
+  "status": "completed",
+  "started_at": "2026-09-04T03:19:31.335Z",
+  "updated_at": "2026-09-04T05:30:14.616Z",
+  "completed_at": "2026-09-04T06:45:00Z",
+  "plan_name": "deepseek-delegation-tool",
+  "session_ids": [
+    "opencode:ses_f95d6898fffeF6mZi6YoH5Op03"
+  ],
+  "session_origins": {
+    "opencode:ses_f95d6898fffeF6mZi6YoH5Op03": "direct"
+  },
+  "task_sessions": {
+    "T1": {
+      "session": "ses_f958ee40affeaoGSoMfBkW22ae",
+      "status": "completed"
+    },
+    "T2": {
+      "session": "ses_f95893306ffes8UiOQoB9r05Ty",
+      "status": "completed"
+    },
+    "T3": {
+      "session": "ses_f958900c0ffeevsBlQth2nfKb7",
+      "status": "completed"
+    },
+    "T4": {
+      "session": "ses_f9588d884ffeANkOF4RKu7GnYS",
+      "status": "completed"
+    },
+    "T5": {
+      "session": "ses_f956fbb8cffev1ku59dH0XA6K0",
+      "status": "completed"
+    },
+    "T6": {
+      "session": "ses_f95563006ffeA2p8F0nkCOzvKm",
+      "status": "completed"
+    },
+    "T7": {
+      "session": "ses_f954374c3ffeTsUiYsFYY3Yl1j",
+      "status": "completed"
+    },
+    "T8": {
+      "session": "ses_f956f9546ffeTAH4R2JNO7QymV",
+      "status": "completed"
+    },
+    "T9": {
+      "session": "ses_f956f68dcffeZ90RRoTaPhR1uC",
+      "status": "completed"
+    },
+    "T10": {
+      "session": "ses_f9538ae75fferUXi4JKa5i1uPy",
+      "status": "completed"
+    },
+    "T11": {
+      "session": "ses_f952f67c9ffev030GX8rl2xWFf",
+      "status": "completed"
+    },
+    "T12": {
+      "session": "ses_f9527cd3affe4ifwBpqEocP0ZK",
+      "status": "completed"
+    },
+    "F1": {
+      "session": "ses_f951fd1f2ffe50jQr1c3BL0VVF",
+      "status": "approved"
+    },
+    "F2": {
+      "session": "ses_f951fbbccffeN0zvJZqe9IOVSr",
+      "status": "approved"
+    },
+    "F3": {
+      "session": "ses_f951fa3f6ffemW3waEKRplFUsD",
+      "status": "approved"
+    },
+    "F4": {
+      "session": "ses_f951f8e0dffeQMItpztG4e8RaB",
+      "status": "approved"
+    }
+  },
+  "agent": "atlas",
+  "ended_at": "2026-09-04T05:30:14.616Z",
+  "elapsed_ms": 7843281
+}

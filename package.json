@@ -1,0 +1,45 @@
+{
+  "name": "deepseek-delegate",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek delegation tool for opencode: explore/write/vision/unrestricted presets backed by the DeepSeek Harness runtime.",
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test --path-ignore-patterns 'tests/smoke.test.ts'",
+    "test:smoke": "bun test tests/smoke.test.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-sdk-client": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-sdk-jsonrpc-demo": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-sdk-jsonrpc-server": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-llm-deepseek": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-agent-spine-demo": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-session-checkpoint-policy": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-subprocess-local": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-bash-sandbox": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-sandbox-local": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-sandbox-policy": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-user-approval": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-fs-sandbox": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-fs-observation-policy": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-tool-fs": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-tool-todo": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-token-meter": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-compaction-basic": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-subagent": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-tool-subagent": "0.0.1-rc.5",
+    "@deepseek-ai/dsh-attachment-local": "0.0.1-rc.5"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.4.3",
+    "@types/bun": "latest",
+    "typescript": "^5.5.0",
+    "zod": "4.1.8"
+  },
+  "trustedDependencies": [
+    "@deepseek-ai/dsh-subprocess-local",
+    "koffi"
+  ]
+}

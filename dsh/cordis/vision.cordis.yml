@@ -1,0 +1,127 @@
+# Project-owned DSH composition for the SDK JSON-RPC runtime (vision preset).
+# Same SANDBOXED SDK JSON-RPC server stack as base.cordis.yml (text presets)
+# PLUS the durable attachment store the DeepSeek adapter needs to accept image
+# content blocks (ctx.attachments resolves at request time; the
+# sdk-jsonrpc-server forwards caller-supplied content blocks verbatim). File
+# permissions are ENFORCED: read-only default; DSH_PERMISSION_MODE from the
+# bridge selects workspace-write per session. Approval policy: never.
+# No web tools. All paths env-relative.
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  config:
+    maxTokensAsSuccess: !!js "process.env.DSH_MAX_TOKENS_AS_SUCCESS === undefined ? true : JSON.parse(process.env.DSH_MAX_TOKENS_AS_SUCCESS)"
+
+# The DeepSeek adapter. Model arrives per session over JSON-RPC, so the
+# `models:` catalog below is advisory/documentary. It mirrors the adapter
+# defaults and advertises the image-capable route explicitly.
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    thinking: enabled
+    reasoningEffort: max
+    models:
+      - id: deepseek-v4-flash
+      - id: deepseek-v4-pro
+      - id: deepseek-v4-flash-vision-exp
+        inputModalities: [text, image]
+
+# The file sandbox runner. read-only is the deployment default (fail-safe);
+# the bridge's env-scrubbed DSH_PERMISSION_MODE resolves the per-session mode.
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: !!js "process.env.DSH_PERMISSION_MODE ?? 'read-only'"
+    workspaceRoot: !!js process.cwd()
+
+# Durable attachment store: normalized images live below $DSH_HOME; the
+# llm-deepseek adapter resolves this service per request. Without it the
+# adapter rejects image input with UNSUPPORTED_CONTENT.
+- id: attachment-local
+  name: '@deepseek-ai/dsh-attachment-local'
+
+# Managed child-process groups for the sandboxed bash executor.
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# Sandboxed bash executor: every command runs confined; a
+# [sandbox: file access denied ...] result is policy, not a command bug.
+# cwd resolves from the session workspace via ctx.sandboxPolicy.
+- id: bash
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  config:
+    timeoutMs: 60000
+
+# Unattended runtime: escalation is deterministically rejected (never
+# prompts); confined in-workspace writes under the active mode need no approval.
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: never
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    persona: !!js "process.env.DSH_SYSTEM_PROMPT ?? 'You are a coding agent. Your bash and filesystem tools run under a file sandbox: a \"[sandbox: file access denied ...]\" result is policy, not a command bug. Work within the permitted workspace and verify your work by running the code or tests.'"
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash:
+      enableRunInBackground: false
+    toolJobs: false
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+    # Snapshot runs read the raw JSONL back; production keeps zstd frames.
+    compression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: subagent
+  name: '@deepseek-ai/dsh-subagent'
+
+- id: subagent-spawn-in-process
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: subagent
+    enableRunInBackground: false
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# Sandboxed filesystem backend: fences read/write/edit behind
+# ctx.fs by the effective sandbox mode (read-only denies writes).
+- id: fs-sandbox
+  name: '@deepseek-ai/dsh-fs-sandbox'
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+- id: fs-observation-policy
+  name: '@deepseek-ai/dsh-fs-observation-policy'
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: token-meter
+  name: '@deepseek-ai/dsh-token-meter'
+
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  config:
+    thresholdRatio: 0.8
+    retainRatio: 0.16
+    maxTokens: 8192
+    compactionRetries: 1

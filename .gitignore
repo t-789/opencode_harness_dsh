@@ -1,0 +1,8 @@
+# Evidence and delegation state (audit artifacts, never committed)
+.omo/evidence/
+.omo/deepseek-delegate/
+.omo/start-work/
+
+# Dependencies and secrets
+node_modules/
+.env
