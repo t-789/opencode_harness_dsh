@@ -70,7 +70,7 @@ import type { JobOutputView, JobSpec } from './jobs.ts'
 export const DEFAULT_SYNC_TIMEOUT_MS = 600_000
 
 /** Poll cadence while waiting for a terminal job state. */
-export const POLL_INTERVAL_MS = 250
+export const POLL_INTERVAL_MS = 10_000
 
 /** Concise-result cap for `final_response` (kept small for the model). */
 export const FINAL_RESPONSE_MAX_CHARS = 4000
@@ -529,6 +529,8 @@ export type JobQueryResult =
   | { ok: true; view: JobQueryView }
   | { ok: false; job_id: string; error: DelegateError }
 
+export type JobWaitResult = JobQueryResult
+
 /**
  * Output companion (deepseek_delegate_output): one normalized snapshot of a
  * background job — running records include progress tails; terminal records
@@ -548,6 +550,42 @@ export async function queryJobOutput(jobId: string, deps: RunDelegateDeps): Prom
       },
     }
   } catch (error) {
+    return { ok: false, job_id: jobId, error: redactedError(codeOf(error) ?? 'JOB_READ_FAILED', messageOf(error)) }
+  }
+}
+
+export async function waitForJobOutput(
+  jobId: string,
+  deps: RunDelegateDeps,
+  timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
+): Promise<JobWaitResult> {
+  try {
+    const output = await waitForTerminalOutput(jobId, deps, timeoutMs)
+    const view = await deps.readOutput(jobId)
+    return {
+      ok: true,
+      view: {
+        job_id: jobId,
+        output: withAuditPath(conciseOutput(output), jobId),
+        stdout_tail: previewTail(view.stdout_tail),
+        stderr_tail: previewTail(view.stderr_tail),
+      },
+    }
+  } catch (error) {
+    if (error instanceof DeadlineExceeded) {
+      return {
+        ok: false,
+        job_id: jobId,
+        error: redactedError('TIMEOUT', `background delegation did not finish within ${timeoutMs} ms; job ${jobId} is still running`),
+      }
+    }
+    if (error instanceof DelegateAborted) {
+      return {
+        ok: false,
+        job_id: jobId,
+        error: redactedError('ABORTED', `wait for background delegation was aborted; job ${jobId} was left running`),
+      }
+    }
     return { ok: false, job_id: jobId, error: redactedError(codeOf(error) ?? 'JOB_READ_FAILED', messageOf(error)) }
   }
 }

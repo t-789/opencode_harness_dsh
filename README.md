@@ -19,12 +19,13 @@ code in sync; the test fails if they drift.
 
 ## What it is
 
-Running `opencode` inside this directory loads three custom tools from `.opencode/tools/`:
+Running `opencode` inside this directory loads four custom tools from `.opencode/tools/`:
 
 | Tool | Purpose |
 | --- | --- |
 | `deepseek_delegate` | Start one bounded delegation (sync or background) |
 | `deepseek_delegate_output` | Poll one background job for status, progress, or the final result |
+| `deepseek_delegate_wait` | Wait once for a background job to finish, returning the terminal result |
 | `deepseek_delegate_cancel` | Stop one running background job (SIGTERM, then SIGKILL to its process group) |
 
 A delegation is **not** a raw model call. The tool spawns the DeepSeek Harness runtime
@@ -96,7 +97,8 @@ and every unrestricted attempt gets a dedicated marker in the audit ledger.
 
 4. **Run opencode in this directory.** Custom tools under `.opencode/tools/` are
    project-scoped: opencode auto-loads `deepseek_delegate`, `deepseek_delegate_output`,
-   and `deepseek_delegate_cancel` from here. No global config changes are involved.
+   `deepseek_delegate_wait`, and `deepseek_delegate_cancel` from here. No global config
+   changes are involved.
 
 ## Usage
 
@@ -113,7 +115,7 @@ schema (`deepseekDelegateInputSchema` in `src/schema.ts`).
 }
 ```
 
-### explore in the background, then poll and cancel
+### explore in the background, then wait or inspect progress
 
 Start (returns immediately with a `bg_` job id and `status: "running"`):
 
@@ -127,7 +129,20 @@ Start (returns immediately with a `bg_` job id and `status: "running"`):
 }
 ```
 
-Then poll with `deepseek_delegate_output`:
+Then wait once with `deepseek_delegate_wait` when the next step depends on the result:
+
+```json
+{
+  "job_id": "bg_a1b2c3d4e5f6",
+  "timeout_ms": 900000
+}
+```
+
+This is the lowest-chatter continuation path: the caller blocks in one tool call and the
+tool checks job state on the shared 10 second cadence. A timeout ends the wait but leaves
+the background job running, so you can wait again, inspect progress, or cancel it.
+
+Use `deepseek_delegate_output` only when you need a progress snapshot:
 
 ```json
 {
@@ -156,8 +171,9 @@ While the job runs you get a snapshot with capped, redacted progress tails:
 }
 ```
 
-When it is done the same call returns the final structured result (shape below). Stop a
-job that is no longer interesting with `deepseek_delegate_cancel`, using the same
+When the job is done, both `deepseek_delegate_wait` and `deepseek_delegate_output` return
+the final structured result (shape below). Stop a job that is no longer interesting with
+`deepseek_delegate_cancel`, using the same
 `{ "job_id": "..." }` argument: a terminal `cancelled` record comes back, and the whole
 detached process group (runner plus DSH runtime tree) is gone. Cancelling a job that
 already finished returns `{"ok": false, "error": {"code": "JOB_NOT_RUNNING", ...}}`.
@@ -400,7 +416,7 @@ bun run test:smoke    # real live-runtime smoke, see below
 ```
 
 The unit suite covers the schema matrix, preset mapping, context packet rendering and
-guardrails, env scrubbing, bridge normalization, background lifecycle (start/poll/cancel
+guardrails, env scrubbing, bridge normalization, background lifecycle (start/wait/poll/cancel
 with real detached stubs), vision admission, the unrestricted gate, the audit ledger, and
 the README examples in this file.
 
@@ -461,7 +477,7 @@ registered in the same compositions. The design note, seams, and verification pl
 ## Project layout
 
 ```
-.opencode/tools/deepseek_delegate.ts   the custom tools (default + output + cancel exports)
+.opencode/tools/deepseek_delegate.ts   the custom tools (default + output + wait + cancel exports)
 src/schema.ts                          input/output/job Zod schemas, preset capability matrix
 src/preset-map.ts                      validated input -> exact bridge request + metadata
 src/context.ts                         write context packet rendering and guardrails

@@ -5,7 +5,7 @@
  * (`runDelegate`, `queryJobOutput`, `cancelDelegateJob` from
  * src/delegate-execute.ts) with STUBBED job-boundary deps (startJob /
  * readOutput / cancelJob). No child process is ever spawned, so no orphan
- * risk exists by construction. The wrapper wiring (default + output + cancel
+ * risk exists by construction. The wrapper wiring (default + output + wait + cancel
  * exports) is asserted in one import-level test.
  *
  * Coverage:
@@ -21,21 +21,24 @@
  *   deadline – sync poll past the deadline → cancel() called once, error
  *              TIMEOUT;
  *   abort    – caller abort during sync wait → cancel(), error ABORTED;
- *   companions – output tool view transitions running→completed; cancel
+ *   companions – output tool view transitions running→completed; wait tool
+ *              blocks until terminal without cancelling on timeout; cancel
  *              tool on running job → cancelled, on terminal job → structured
  *              JOB_NOT_RUNNING;
  *   wiring   – default export args === deepseekDelegateInputSchema.shape;
- *              output/cancel tool definitions exist with job_id args.
+ *              output/wait/cancel tool definitions exist with job_id args.
  */
 import { expect, test } from 'bun:test'
-import defaultTool, { cancel as cancelTool, output as outputTool } from '../.opencode/tools/deepseek_delegate.ts'
+import defaultTool, { cancel as cancelTool, output as outputTool, wait as waitTool } from '../.opencode/tools/deepseek_delegate.ts'
 
 import {
   cancelDelegateJob,
   conciseOutput,
   delegateResultText,
+  POLL_INTERVAL_MS,
   queryJobOutput,
   runDelegate,
+  waitForJobOutput,
   type RunDelegateDeps,
 } from '../src/delegate-execute.ts'
 import { JobError } from '../src/jobs.ts'
@@ -50,6 +53,10 @@ import {
 /* ------------------------------------------------------------------ */
 /* Fixtures + stub helpers                                             */
 /* ------------------------------------------------------------------ */
+
+test('runDelegate sync: polling cadence is ten seconds', () => {
+  expect(POLL_INTERVAL_MS).toBe(10_000)
+})
 
 const CWD = '/workspace/example-repo' // never touched: all seams are stubbed
 
@@ -345,7 +352,7 @@ test('runDelegate sync: deadline exceeded → cancel called once and error TIMEO
       },
       now: () => clock,
       sleep: async () => {
-        clock += 250 // 250 ms per poll, matching POLL_INTERVAL_MS semantics
+        clock += 10_000 // 10 s per poll, matching POLL_INTERVAL_MS semantics
       },
     },
   )
@@ -355,7 +362,7 @@ test('runDelegate sync: deadline exceeded → cancel called once and error TIMEO
   expect(result.error?.code).toBe('TIMEOUT')
   expect(result.error?.message).toContain('1000 ms')
   expect(result.job_id).toBe('bg_timeout00001')
-  expect(reads).toBe(4) // polls at t=0,250,500,750; deadline fires at t=1000
+  expect(reads).toBe(1) // polls at t=0; deadline fires before the next 10 s poll
   expect(cancels).toBe(1)
   expect(JSON.stringify(result)).not.toContain('"status": "completed"')
 })
@@ -466,6 +473,88 @@ test('companion output: unknown job → structured ok:false (never throws)', asy
   expect(result.error.message).toContain('bg_doesnotexist0')
 })
 
+test('companion wait: running job resolves when terminal output appears', async () => {
+  let reads = 0
+  let sleeps = 0
+  const result = await waitForJobOutput(
+    'bg_wait00000001',
+    {
+      startJob: async () => {
+        throw new Error('unused')
+      },
+      readOutput: async () => {
+        reads += 1
+        if (reads === 1) {
+          return {
+            output: {
+              status: 'running',
+              preset: 'explore',
+              job_id: 'bg_wait00000001',
+              model: 'deepseek-v4-flash',
+              permission_mode: 'read-only',
+            },
+            stdout_tail: 'still working',
+            stderr_tail: '',
+          }
+        }
+        return completedView('bg_wait00000001')
+      },
+      cancelJob: async () => {
+        throw new Error('wait must not cancel')
+      },
+      sleep: async () => {
+        sleeps += 1
+      },
+    },
+  )
+
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(reads).toBe(3)
+  expect(sleeps).toBe(1)
+  expect(result.view.output.status).toBe('completed')
+  expect(result.view.output.job_id).toBe('bg_wait00000001')
+})
+
+test('companion wait: timeout leaves background job running', async () => {
+  let clock = 0
+  let cancels = 0
+  const result = await waitForJobOutput(
+    'bg_waittimeout1',
+    {
+      startJob: async () => {
+        throw new Error('unused')
+      },
+      readOutput: async () => ({
+        output: {
+          status: 'running',
+          preset: 'explore',
+          job_id: 'bg_waittimeout1',
+          model: 'deepseek-v4-flash',
+          permission_mode: 'read-only',
+        },
+        stdout_tail: '',
+        stderr_tail: '',
+      }),
+      cancelJob: async () => {
+        cancels += 1
+        return { ...runningRecord('bg_waittimeout1'), status: 'cancelled' }
+      },
+      now: () => clock,
+      sleep: async () => {
+        clock += 10_000
+      },
+    },
+    1000,
+  )
+
+  expect(result.ok).toBe(false)
+  if (result.ok) return
+  expect(result.error.code).toBe('TIMEOUT')
+  expect(result.error.message).toContain('still running')
+  expect(cancels).toBe(0)
+})
+
 test('companion cancel: running job → ok with status cancelled', async () => {
   const seen: string[] = []
   const result = await cancelDelegateJob('bg_cancel000001', {
@@ -533,6 +622,9 @@ test('wiring: default export is the tool backed by deepseekDelegateInputSchema; 
   expect(typeof outputTool).toBe('object')
   expect(typeof outputTool.execute).toBe('function')
   expect('job_id' in outputTool.args).toBe(true)
+  expect(typeof waitTool).toBe('object')
+  expect(typeof waitTool.execute).toBe('function')
+  expect('job_id' in waitTool.args).toBe(true)
   expect(typeof cancelTool).toBe('object')
   expect(typeof cancelTool.execute).toBe('function')
   expect('job_id' in cancelTool.args).toBe(true)

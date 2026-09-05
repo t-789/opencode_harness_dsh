@@ -2,8 +2,8 @@
  * deepseek_delegate — opencode custom tool (plan todo 7 wiring).
  *
  * Filename = tool id: the DEFAULT export becomes `deepseek_delegate`; the
- * named `output` / `cancel` exports become `deepseek_delegate_output` /
- * `deepseek_delegate_cancel` (custom-tool multi-export naming).
+ * named `output` / `wait` / `cancel` exports become `deepseek_delegate_output` /
+ * `deepseek_delegate_wait` / `deepseek_delegate_cancel` (custom-tool multi-export naming).
  *
  * This file is deliberately a THIN wrapper over the core in
  * `src/delegate-execute.ts` (runDelegate + queryJobOutput +
@@ -31,6 +31,7 @@ import {
   delegateResultText,
   queryJobOutput,
   runDelegate,
+  waitForJobOutput,
   type RunDelegateDeps,
 } from '../../src/delegate-execute.ts'
 import { writeAuditFromResult } from '../../src/audit.ts'
@@ -105,8 +106,8 @@ const delegateDescription =
   '"vision" (image-aware; needs images, deepseek-v4-flash-vision-exp, read-only unless ' +
   'permission_mode:"workspace-write"), "unrestricted" (danger-full-access; requires ' +
   'confirm_unrestricted === "I_UNDERSTAND_DSH_DANGER_FULL_ACCESS"). ' +
-  'Set run_in_background:true to get a bg_ job id immediately, then poll with ' +
-  'deepseek_delegate_output and stop with deepseek_delegate_cancel. ' +
+  'Set run_in_background:true to get a bg_ job id immediately, wait once with ' +
+  'deepseek_delegate_wait, inspect progress with deepseek_delegate_output, and stop with deepseek_delegate_cancel. ' +
   'Returns structured JSON: status/preset/model/permission_mode/job_id/session_id/' +
   'finish_reason/final_response/audit_path/error. ' +
   NETWORK_CAVEAT_V1
@@ -184,6 +185,31 @@ const outputTool = tool({
 })
 
 export const output = outputTool
+
+/* ------------------------------------------------------------------ */
+/* Named export: deepseek_delegate_wait                                */
+/* ------------------------------------------------------------------ */
+
+const waitTool = tool({
+  description:
+    'Wait for one background deepseek_delegate job to reach a terminal state. ' +
+    'This is the low-polling continuation path: start with run_in_background:true, ' +
+    'then call this once instead of repeatedly polling deepseek_delegate_output. ' +
+    'Timeout ends the wait but leaves the background job running. ' +
+    'Returns the same shape as deepseek_delegate_output. ' +
+    NETWORK_CAVEAT_V1,
+  args: {
+    job_id: z.string().min(1, 'job_id is required (bg_<hex> from deepseek_delegate)'),
+    timeout_ms: z.number().int().positive().optional(),
+  },
+  execute: async (args, context) => {
+    context.metadata({ title: `deepseek_delegate_wait · ${args.job_id}` })
+    const result = await waitForJobOutput(args.job_id, liveDeps(context.abort), args.timeout_ms)
+    return delegateResultText(result)
+  },
+})
+
+export const wait = waitTool
 
 /* ------------------------------------------------------------------ */
 /* Named export: deepseek_delegate_cancel                              */
