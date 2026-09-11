@@ -19,7 +19,7 @@
  *   - surface the attempt via `context.metadata` (title + preset/model) so
  *     opencode shows UI activity for the call.
  *
- * v1 caveat (must be visible to every caller): explore/write/vision confine
+ * v1 caveat (must be visible to every caller): explore/write confine
  * FILE effects through the DSH sandbox policy, but nothing hard-blocks
  * NETWORK access in v1.
  */
@@ -96,16 +96,20 @@ function resolveCwd(cwd: string, sessionDirectory: string): string {
 
 /** v1 network caveat shown on every tool surface (audit + descriptions). */
 const NETWORK_CAVEAT_V1 =
-  'CAVEAT v1: file effects are confined for explore/write/vision, but v1 does NOT ' +
+  'CAVEAT v1: file effects are confined for explore/write, but v1 does NOT ' +
   'hard-block network access from the delegated agent — review results accordingly.'
+
+/** Callable presets: "vision" stays schema-recognized but is not a callable option. */
+const CALLABLE_PRESETS = ["explore", "write", "unrestricted"] as const
 
 const delegateDescription =
   'Delegate one bounded task to a DeepSeek model through the DeepSeek Harness runtime. ' +
-  'Presets: "explore" (read-only repository analysis, deepseek-v4-flash), "write" ' +
+  'Presets: "explore" (read-only repository analysis, deepseek-flash), "write" ' +
   '(workspace-write implementation; requires a context_packet or allow_auto_context:true), ' +
-  '"vision" (image-aware; needs images, deepseek-v4-flash-vision-exp, read-only unless ' +
-  'permission_mode:"workspace-write"), "unrestricted" (danger-full-access; requires ' +
+  '"unrestricted" (danger-full-access; requires ' +
   'confirm_unrestricted === "I_UNDERSTAND_DSH_DANGER_FULL_ACCESS"). ' +
+  'The "vision" preset was removed when DeepSeek merged the image model into ' +
+  'deepseek-flash; vision calls are rejected with a deprecation message. ' +
   'Set run_in_background:true to get a bg_ job id immediately, wait once with ' +
   'deepseek_delegate_wait, inspect progress with deepseek_delegate_output, and stop with deepseek_delegate_cancel. ' +
   'Returns structured JSON: status/preset/model/permission_mode/job_id/session_id/' +
@@ -113,7 +117,12 @@ const delegateDescription =
   NETWORK_CAVEAT_V1
 const delegateTool = tool({
   description: delegateDescription,
-  args: deepseekDelegateInputSchema.shape,
+  args: {
+    ...deepseekDelegateInputSchema.shape,
+    preset: z.enum(CALLABLE_PRESETS).describe(
+      'Delegation preset. "vision" was removed when the image model merged into deepseek-flash; use explore for read-only analysis or write for implementation.',
+    ),
+  },
   execute: async (args, context) => {
     try {
       // Best-effort UI activity metadata (title + preset/model) before any work.
@@ -148,7 +157,7 @@ const delegateTool = tool({
       return delegateResultText({
         status: 'error',
         preset: 'explore',
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-flash',
         permission_mode: 'read-only',
         error: {
           code: 'INTERNAL',

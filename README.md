@@ -8,7 +8,7 @@ code in sync; the test fails if they drift.
 
 > ## Read this first: v1 security limitation
 >
-> explore, write, and vision confine **file effects** through the DSH sandbox:
+> explore and write confine **file effects** through the DSH sandbox:
 > `read-only` denies writes, `workspace-write` confines writes to the workspace, and any
 > escalation attempt is auto-rejected (the runtime runs unattended with approval policy
 > `never`). **v1 does NOT hard-block network access from the delegated agent.** The DSH
@@ -35,12 +35,12 @@ tools confined by the DSH sandbox policy, session continuity for follow-up turns
 subagents, todo tools, and context compaction. You give it a bounded task; it comes back
 with a structured result, a session id, and an audit record.
 
-Flow: `deepseek_delegate` (schema validation, preset mapping, context rendering, vision
-admission) → `src/jobs.ts` `JobManager` (detached child, state on disk) →
+Flow: `deepseek_delegate` (schema validation, preset mapping, context rendering) →
+`src/jobs.ts` `JobManager` (detached child, state on disk) →
 `scripts/delegate-runner.ts` (env-scrubbed bridge, one JSON result line) → DSH runtime
 booted from a project-owned Cordis composition (`dsh/cordis/*.cordis.yml`).
 
-## The four presets
+## The three presets
 
 Presets are fixed. You cannot pass a free-form `model`, `provider`, or escalate through
 `permission_mode`: the input schema has no model/provider fields at all, and each preset
@@ -48,10 +48,15 @@ only accepts its own permission subset.
 
 | Preset | Model | File-effect mode | Hard requirements | Intended use |
 | --- | --- | --- | --- | --- |
-| `explore` | `deepseek-v4-flash` | `read-only` (only value accepted) | none; images are rejected | repository analysis, summaries, audits |
-| `write` | `deepseek-v4-flash` | `workspace-write` (only value accepted) | `context_packet` **or** `allow_auto_context: true`; images are rejected | bounded implementation work inside the workspace |
-| `vision` | `deepseek-v4-flash-vision-exp` | `read-only` by default; `workspace-write` only when explicitly requested; `danger-full-access` rejected | at least one image; supported types: png, jpg, jpeg, webp, gif | image-aware analysis, optionally with edits |
-| `unrestricted` | `deepseek-v4-flash` | `danger-full-access` (no caller override allowed) | `confirm_unrestricted` must equal the exact token `I_UNDERSTAND_DSH_DANGER_FULL_ACCESS` | gated escape hatch, not for casual use |
+| `explore` | `deepseek-flash` | `read-only` (only value accepted) | none; images are rejected | repository analysis, summaries, audits |
+| `write` | `deepseek-flash` | `workspace-write` (only value accepted) | `context_packet` **or** `allow_auto_context: true`; images are rejected | bounded implementation work inside the workspace |
+| `unrestricted` | `deepseek-flash` | `danger-full-access` (no caller override allowed) | `confirm_unrestricted` must equal the exact token `I_UNDERSTAND_DSH_DANGER_FULL_ACCESS` | gated escape hatch, not for casual use |
+
+> **vision was removed.** DeepSeek merged the image model into `deepseek-flash`.
+> The `vision` preset (and its old `deepseek-v4-flash-vision-exp` route) no longer
+> exists: any `preset: "vision"` call is rejected at the schema layer with a
+> deprecation message. Use `explore` for read-only analysis or `write` for
+> implementation work.
 
 Every call also carries a `cwd` (relative paths resolve against the opencode session
 directory) and optional `session_id`, `run_in_background`, `max_tokens`, and `timeout_ms`.
@@ -161,7 +166,7 @@ While the job runs you get a snapshot with capped, redacted progress tails:
       "status": "running",
       "preset": "explore",
       "job_id": "bg_a1b2c3d4e5f6",
-      "model": "deepseek-v4-flash",
+      "model": "deepseek-flash",
       "permission_mode": "read-only",
       "audit_path": "/path/to/.omo/deepseek-delegate/audit/bg_a1b2c3d4e5f6.json"
     },
@@ -220,14 +225,13 @@ A `write` call with neither is rejected before anything spawns:
   "cwd": "."
 }
 ```
+### vision was removed
 
-### vision: image-aware delegation
+DeepSeek merged the image model into `deepseek-flash`. The `vision` preset and the
+old `deepseek-v4-flash-vision-exp` route no longer exist: every `preset: "vision"`
+call is rejected at the schema layer with a deprecation message.
 
-Images are paths (absolute, or relative to `cwd`) of real files that pass admission:
-regular file, nonzero, extension in png/jpg/jpeg/webp/gif, and magic bytes matching the
-extension. Duplicates are rejected.
-
-```json delegate
+```json delegate-invalid
 {
   "preset": "vision",
   "prompt": "Describe the layout problems in this UI mockup.",
@@ -236,23 +240,10 @@ extension. Duplicates are rejected.
 }
 ```
 
-Vision writes are opt-in with `permission_mode: "workspace-write"` (still confined to
-the workspace; `danger-full-access` is never accepted here):
-
-```json delegate
-{
-  "preset": "vision",
-  "prompt": "Transcribe the whiteboard photo into a new notes/whiteboard.md.",
-  "cwd": ".",
-  "images": ["/tmp/whiteboard.jpg"],
-  "permission_mode": "workspace-write"
-}
-```
-
-Note: the block shape sent to the runtime is the correct rc.5 `image` +
-`ImageAttachmentRef` contract, but durable image resolution end to end additionally
-depends on the runtime attachment store registering the content-addressed id
-(see the documented residual risk in `src/vision.ts`).
+Use `explore` for read-only analysis or `write` for implementation work. The
+image-admission module (`src/vision.ts`) and its composition
+(`dsh/cordis/vision.cordis.yml`) are retained, deprecated, for a future re-enabled
+vision path.
 
 ### unrestricted: gated escape hatch
 
@@ -305,7 +296,7 @@ cancel it if the deadline passes.
   "preset": "explore",
   "job_id": "bg_a1b2c3d4e5f6",
   "session_id": "0f9c1f2e-8a3d-4f6b-a7f8-90c2d1e3f4a5",
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-flash",
   "permission_mode": "read-only",
   "finish_reason": "completed",
   "final_response": "The repository has four layers...",
@@ -328,7 +319,7 @@ cancel it if the deadline passes.
 {
   "status": "error",
   "preset": "write",
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-flash",
   "permission_mode": "workspace-write",
   "error": {
     "code": "SCHEMA_INVALID",
@@ -417,7 +408,7 @@ bun run test:smoke    # real live-runtime smoke, see below
 
 The unit suite covers the schema matrix, preset mapping, context packet rendering and
 guardrails, env scrubbing, bridge normalization, background lifecycle (start/wait/poll/cancel
-with real detached stubs), vision admission, the unrestricted gate, the audit ledger, and
+with real detached stubs), the deprecated vision module, the unrestricted gate, the
 the README examples in this file.
 
 Smoke tests call the **real** DeepSeek runtime and only run when **both**
@@ -443,9 +434,10 @@ suite fails if any child process survives. Per-run budget: `DSH_SMOKE_TIMEOUT_MS
 
 ## Security model and the v1 network limitation
 
-What v1 **does** enforce, through the project-owned Cordis compositions
-(`dsh/cordis/base.cordis.yml`, `dsh/cordis/vision.cordis.yml`) that mount the sandboxed
-DSH stack:
+What v1 **does** enforce, through the project-owned Cordis composition
+(`dsh/cordis/base.cordis.yml`) that mounts the sandboxed DSH stack. The deprecated
+`dsh/cordis/vision.cordis.yml` is retained for a future re-enabled vision path and
+is mounted by no preset:
 
 - `@deepseek-ai/dsh-sandbox-policy` maps the per-call mode (`read-only`,
   `workspace-write`) onto file grants; the deployment default is `read-only`.
@@ -481,14 +473,14 @@ registered in the same compositions. The design note, seams, and verification pl
 src/schema.ts                          input/output/job Zod schemas, preset capability matrix
 src/preset-map.ts                      validated input -> exact bridge request + metadata
 src/context.ts                         write context packet rendering and guardrails
-src/vision.ts                          image admission, magic-byte probing, content blocks
+src/vision.ts                          deprecated image admission (retained, no preset uses it)
 src/jobs.ts                            background job lifecycle (detached runner children)
 src/delegate-execute.ts                sync/execute core (validation, mapping, polling)
 src/audit.ts                           metadata-only audit ledger writer
 scripts/delegate-runner.ts             executable bridge: one JSON request -> one JSON line
 scripts/runner-lib.ts                  env allowlist/scrubber, request parsing, redaction
 dsh/cordis/base.cordis.yml             sandboxed composition for text presets
-dsh/cordis/vision.cordis.yml           same + durable attachment store for images
+dsh/cordis/vision.cordis.yml           deprecated image composition (retained, unmounted)
 tests/                                 unit suite + credential-gated smoke + docs-examples
 docs/v2-network-hardening.md           v2 design note (hard network denial path)
 .omo/deepseek-delegate/                runtime state: jobs/, audit/, sessions/ (gitignored)

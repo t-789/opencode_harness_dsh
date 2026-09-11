@@ -1,3 +1,7 @@
+# @deprecated: retained for a future re-enabled vision path. The vision preset was
+# disabled when DeepSeek merged the image model into deepseek-v4-flash; no preset
+# mounts this composition anymore (CORDIS_COMPOSITIONS only lists `base`).
+#
 # Project-owned DSH composition for the SDK JSON-RPC runtime (vision preset).
 # Same SANDBOXED SDK JSON-RPC server stack as base.cordis.yml (text presets)
 # PLUS the durable attachment store the DeepSeek adapter needs to accept image

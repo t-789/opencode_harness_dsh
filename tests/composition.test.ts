@@ -4,8 +4,8 @@ import { resolve } from "node:path"
 
 // Project-owned DSH Cordis composition gate (todo 4):
 // base.cordis.yml serves the SANDBOXED SDK JSON-RPC runtime for text presets
-// (explore/write); vision.cordis.yml adds the durable attachment store and
-// advertises the image-capable model route. Tests assert on file TEXT plus
+// (explore/write); vision.cordis.yml is DEPRECATED but retained for a future
+// re-enabled vision path. Tests assert on file TEXT plus
 // light structural row checks (no heavy YAML dependency by design — `!!js`
 // tags are runtime-only).
 //
@@ -80,7 +80,7 @@ describe("dsh cordis base composition (text presets)", () => {
   })
 })
 
-describe("dsh cordis vision composition (vision preset)", () => {
+describe("dsh cordis vision composition (deprecated, retained)", () => {
   test("mounts the SDK JSON-RPC server and DeepSeek adapter", () => {
     const n = names(visionText)
     expect(n).toContain("@deepseek-ai/dsh-sdk-jsonrpc-server")
@@ -104,11 +104,10 @@ describe("dsh cordis vision composition (vision preset)", () => {
     expect(names(visionText)).toContain("@deepseek-ai/dsh-attachment-local")
   })
 
-  test("advertises the image-capable model route", () => {
-    expect(visionText).toContain("deepseek-v4-flash-vision-exp")
-    // The catalog entry must declare image modality (text-only routes reject images).
-    const entry = /- id: deepseek-v4-flash-vision-exp\s*\n\s*inputModalities:\s*\[text, image\]/.exec(visionText)
-    expect(entry).not.toBeNull()
+  test("is deprecated and retained for a future re-enabled vision path", () => {
+    expect(visionText).toContain("@deprecated")
+    expect(visionText).toContain("retained for a future re-enabled vision path")
+    // The sandboxed stack assertions above remain the security gate for this file.
   })
 })
 

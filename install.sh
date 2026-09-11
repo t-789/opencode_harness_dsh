@@ -218,7 +218,7 @@ command -v rg >/dev/null 2>&1 && ! grep -q DEEPSEEK_API_KEY ~/.zshrc 2>/dev/null
 
 echo ""
 info "安装完成。在目标项目运行 opencode 即可使用 deepseek_delegate。"
-echo "  - explore/vision 只读分析、write 限额写入、unrestricted 需逐次确认 token"
+echo "  - explore 只读分析、write 限额写入、unrestricted 需逐次确认 token"
 echo "  - 用法示例见 README:'### explore: one synchronous analysis' 起"
 [ "$MODE" = "wrapper" ] && echo "  - wrapper 模式:任务状态与审计记录统一存于 hub 的 .omo/deepseek-delegate/"
 exit 0

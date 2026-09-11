@@ -81,7 +81,7 @@ function stubSpec(cwd: string, preset: Preset = 'explore'): JobSpec {
   return {
     preset,
     cwd,
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'read-only',
     runner_request: {
       prompt: 'stub prompt — never reaches any model',
@@ -89,7 +89,7 @@ function stubSpec(cwd: string, preset: Preset = 'explore'): JobSpec {
       session_root: join(cwd, 'sessions'),
       cordis_config: join(cwd, 'cordis.yml'),
       provider: 'deepseek-official',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       permission_mode: 'read-only',
     },
   }
@@ -192,7 +192,7 @@ test('happy: stub background job completes; output() returns the final normalize
     expect(view.output.session_id).toBe('ses_stub_happy')
     expect(view.output.final_response).toBe('stub task completed')
     expect(view.output.finish_reason).toBe('completed')
-    expect(view.output.model).toBe('deepseek-v4-flash')
+    expect(view.output.model).toBe('deepseek-flash')
     expect(view.output.permission_mode).toBe('read-only')
 
     // The runner's single result line was captured verbatim in .out.

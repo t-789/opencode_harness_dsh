@@ -16,8 +16,8 @@ restrictions." References (read-only, do not edit upstream):
 - `/Users/liuzy/deepseek-harness/packages/sandbox/sandbox-local/README.md` (per-platform
   profile builders: Seatbelt on macOS, bwrap/Landlock on Linux)
 
-Current enforcement layer for our presets: the sandboxed compositions in
-`dsh/cordis/base.cordis.yml` and `dsh/cordis/vision.cordis.yml`, which mount
+Current enforcement layer for our presets: the sandboxed composition in
+`dsh/cordis/base.cordis.yml`, which mounts
 `@deepseek-ai/dsh-sandbox-local` + `dsh-sandbox-policy` + `dsh-bash-sandbox` +
 `dsh-fs-sandbox` + `dsh-user-approval` (policy `never`).
 

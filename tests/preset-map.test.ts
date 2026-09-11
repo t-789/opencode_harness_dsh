@@ -1,11 +1,11 @@
 /**
  * Preset → runtime mapping tests for deepseek_delegate (plan todo 5).
  *
- * Table-driven over the four presets: each canonical validated input must map
- * to EXACT bridge request fields (model, permission_mode, composition,
+ * Table-driven over the three callable presets: each canonical validated input
+ * must map to EXACT bridge request fields (model, permission_mode, composition,
  * session_root, cordis_config, provider, cwd) plus metadata the tool execute
- * path uses. Mapping-layer guards (vision images unresolved, unrestricted
- * token missing, malformed/foreign content_blocks, forged model/permission
+ * path uses. Mapping-layer guards (the disabled vision preset, unrestricted
+ * token missing, malformed/stale content_blocks, forged model/permission
  * escapes) are asserted as failures — never reaching a runner/helper.
  *
  * Credential-free and fs-free: mapping performs no file checks and no spawns.
@@ -13,7 +13,7 @@
 import { describe, expect, test } from "bun:test"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseRequest, type DelegateRequest } from "../scripts/runner-lib.ts"
+import { parseRequest } from "../scripts/runner-lib.ts"
 import {
   DELEGATE_MODELS,
   PERMISSION_MODES,
@@ -57,14 +57,11 @@ const writePacket = {
   non_goals: "No DSH source edits.",
 }
 
-const VISION_PROMPT = "What is in this diagram?"
-const IMAGE_PATHS = ["/tmp/diagram.png", "/tmp/photo.png"]
-
-/** Pre-assembled content blocks in the exact shape todo 9 will produce. */
-const VISION_BLOCKS = [
-  { type: "text", text: VISION_PROMPT },
-  { type: "image", path: IMAGE_PATHS[0] },
-  { type: "image", path: IMAGE_PATHS[1] },
+/** Stale content blocks in the shape the removed vision path used to assemble. */
+const STALE_CONTENT_BLOCKS = [
+  { type: "text", text: "What is in this diagram?" },
+  { type: "image", path: "/tmp/diagram.png" },
+  { type: "image", path: "/tmp/photo.png" },
 ]
 
 function validInput(raw: Record<string, unknown>): DelegateInput {
@@ -77,22 +74,20 @@ function validInput(raw: Record<string, unknown>): DelegateInput {
 
 interface Row {
   name: string
-  preset: "explore" | "write" | "vision" | "unrestricted"
+  preset: "explore" | "write" | "unrestricted"
   build: BuildBridgeRequestInput
   /** Schema-derived expectations (single source of truth: resolvePresetDefaults). */
   expectModel: DelegateModel
   expectPermission: PermissionMode
-  expectComposition: "base" | "vision"
-  /** Body assertions. */
-  expectPrompt?: string
-  expectBlocks?: unknown[]
+  expectComposition: "base"
+  /** Body assertion: every live preset maps exactly one prompt. */
+  expectPrompt: string
   /** Optional-field passthrough assertions. */
   sessionId?: string
   maxTokens?: number
   timeoutMs?: number
   /** Metadata assertions. */
   hasContextPacket?: boolean
-  imagePaths?: readonly string[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -101,12 +96,12 @@ interface Row {
 
 const rows: Row[] = [
   {
-    name: "explore -> deepseek-v4-flash / read-only / base.cordis.yml, prompt passthrough",
+    name: "explore -> deepseek-flash / read-only / base.cordis.yml, prompt passthrough",
     preset: "explore",
     build: {
       input: validInput({ preset: "explore", prompt: PROMPT, cwd: TARGET_CWD }),
     },
-    expectModel: "deepseek-v4-flash",
+    expectModel: "deepseek-flash",
     expectPermission: "read-only",
     expectComposition: "base",
     expectPrompt: PROMPT,
@@ -124,7 +119,7 @@ const rows: Row[] = [
         timeout_ms: 90_000,
       }),
     },
-    expectModel: "deepseek-v4-flash",
+    expectModel: "deepseek-flash",
     expectPermission: "read-only",
     expectComposition: "base",
     expectPrompt: PROMPT,
@@ -143,7 +138,7 @@ const rows: Row[] = [
         context_packet: writePacket,
       }),
     },
-    expectModel: "deepseek-v4-flash",
+    expectModel: "deepseek-flash",
     expectPermission: "workspace-write",
     expectComposition: "base",
     expectPrompt: PROMPT,
@@ -161,7 +156,7 @@ const rows: Row[] = [
       }),
       rendered_prompt: "[CONTEXT]\nobjective: Add a verify command to the harness\n[END CONTEXT]\n" + PROMPT,
     },
-    expectModel: "deepseek-v4-flash",
+    expectModel: "deepseek-flash",
     expectPermission: "workspace-write",
     expectComposition: "base",
     expectPrompt: "[CONTEXT]\nobjective: Add a verify command to the harness\n[END CONTEXT]\n" + PROMPT,
@@ -178,68 +173,11 @@ const rows: Row[] = [
         allow_auto_context: true,
       }),
     },
-    expectModel: "deepseek-v4-flash",
+    expectModel: "deepseek-flash",
     expectPermission: "workspace-write",
     expectComposition: "base",
     expectPrompt: PROMPT,
     hasContextPacket: false,
-  },
-  {
-    name: "vision (default read-only) -> vision-exp / read-only / vision.cordis.yml; blocks injected verbatim",
-    preset: "vision",
-    build: {
-      input: validInput({
-        preset: "vision",
-        prompt: VISION_PROMPT,
-        cwd: TARGET_CWD,
-        images: IMAGE_PATHS,
-      }),
-      content_blocks: VISION_BLOCKS,
-    },
-    expectModel: "deepseek-v4-flash-vision-exp",
-    expectPermission: "read-only",
-    expectComposition: "vision",
-    expectBlocks: VISION_BLOCKS,
-    imagePaths: IMAGE_PATHS,
-  },
-  {
-    name: "vision (explicit workspace-write override) -> workspace-write + vision stack",
-    preset: "vision",
-    build: {
-      input: validInput({
-        preset: "vision",
-        prompt: VISION_PROMPT,
-        cwd: TARGET_CWD,
-        images: IMAGE_PATHS,
-        permission_mode: "workspace-write",
-      }),
-      resolved_images: IMAGE_PATHS.map((path) => ({ path })),
-      content_blocks: VISION_BLOCKS,
-    },
-    expectModel: "deepseek-v4-flash-vision-exp",
-    expectPermission: "workspace-write",
-    expectComposition: "vision",
-    expectBlocks: VISION_BLOCKS,
-    imagePaths: IMAGE_PATHS,
-  },
-  {
-    name: "vision with admission output (resolved_images) but schema-raw images equal -> image_paths metadata from admission",
-    preset: "vision",
-    build: {
-      input: validInput({
-        preset: "vision",
-        prompt: VISION_PROMPT,
-        cwd: TARGET_CWD,
-        images: [IMAGE_PATHS[0]],
-      }),
-      resolved_images: [{ path: IMAGE_PATHS[0] }],
-      content_blocks: [{ type: "image", path: IMAGE_PATHS[0] }],
-    },
-    expectModel: "deepseek-v4-flash-vision-exp",
-    expectPermission: "read-only",
-    expectComposition: "vision",
-    expectBlocks: [{ type: "image", path: IMAGE_PATHS[0] }],
-    imagePaths: [IMAGE_PATHS[0]],
   },
   {
     name: "unrestricted (exact token) -> danger-full-access / base.cordis.yml",
@@ -252,7 +190,7 @@ const rows: Row[] = [
         confirm_unrestricted: UNRESTRICTED_CONFIRMATION_TOKEN,
       }),
     },
-    expectModel: "deepseek-v4-flash",
+    expectModel: "deepseek-flash",
     expectPermission: "danger-full-access",
     expectComposition: "base",
     expectPrompt: PROMPT,
@@ -262,12 +200,6 @@ const rows: Row[] = [
 /* ------------------------------------------------------------------ */
 /* Shared assertions per row                                           */
 /* ------------------------------------------------------------------ */
-
-function expectExactlyOneBody(request: DelegateRequest): void {
-  const hasPrompt = request.prompt !== undefined
-  const hasBlocks = request.content_blocks !== undefined
-  expect(hasPrompt).not.toBe(hasBlocks)
-}
 
 function assertRow(built: BuiltBridgeRequest, row: Row): void {
   const { request, metadata } = built
@@ -300,16 +232,10 @@ function assertRow(built: BuiltBridgeRequest, row: Row): void {
   // 5) session_root is project-owned, never derived from the delegation cwd.
   expect(request.session_root.startsWith(TARGET_CWD)).toBe(false)
 
-  // 6) body: exactly one of prompt/content_blocks, with the expected payload.
-  expectExactlyOneBody(request)
-  if (row.expectPrompt !== undefined) {
-    expect(request.content_blocks).toBeUndefined()
-    expect(request.prompt).toBe(row.expectPrompt)
-  } else {
-    expect(request.prompt).toBeUndefined()
-    expect(request.content_blocks).toEqual(row.expectBlocks)
-    expect(request.content_blocks).toHaveLength(row.expectBlocks!.length)
-  }
+  // 6) body: every live preset maps exactly one prompt (the vision
+  //    content-block path was removed with the model merge).
+  expect(request.content_blocks).toBeUndefined()
+  expect(request.prompt).toBe(row.expectPrompt)
 
   // 7) optional passthrough fields.
   if (row.sessionId === undefined) expect(request.session_id).toBeUndefined()
@@ -328,9 +254,8 @@ function assertRow(built: BuiltBridgeRequest, row: Row): void {
   expect(metadata.session_root).toBe(SESSION_ROOT)
   expect(metadata.cordis_config).toBe(request.cordis_config)
   expect(metadata.has_context_packet).toBe(row.hasContextPacket ?? false)
-  expect(metadata.uses_content_blocks).toBe(row.expectBlocks !== undefined)
-  if (row.imagePaths === undefined) expect(metadata.image_paths).toEqual([])
-  else expect(metadata.image_paths).toEqual(row.imagePaths)
+  expect(metadata.uses_content_blocks).toBe(false)
+  expect(metadata.image_paths).toEqual([])
 
   // 9) wire round trip: the built request survives the bridge's own parser
   //    (JSON serialization drops undefined optionals, exactly like the spawn
@@ -354,25 +279,23 @@ describe("preset mapping happy paths (table-driven)", () => {
 /* ------------------------------------------------------------------ */
 
 describe("mapping honors the schema-derived permission mode (fail closed)", () => {
-  test("vision with a forged danger-full-access override (schema would reject it) maps read-only when blocks are resolved", () => {
-    // zod's strictObject + superRefine reject this input upstream (schema
-    // tests assert that); a caller that bypasses safeParse with a forged
-    // object must STILL not escalate: resolvePresetDefaults fails closed.
+  test("forged vision input is rejected by the mapping guard (never selects the removed model)", () => {
+    // The schema rejects vision with the deprecation message; a caller that
+    // bypasses safeParse must STILL not reach a model or a composition.
     const forged = {
       preset: "vision",
-      prompt: VISION_PROMPT,
+      prompt: "describe this image",
       cwd: TARGET_CWD,
-      images: IMAGE_PATHS,
+      images: ["/tmp/diagram.png"],
       permission_mode: "danger-full-access",
     } as unknown as DelegateInput
-    const built = buildBridgeRequestWithMetadata({
-      input: forged,
-      content_blocks: VISION_BLOCKS,
-    })
-    expect(built.metadata.permission_mode).toBe("read-only")
-    expect(built.request.permission_mode).toBe("read-only")
-    expect(built.request.model).toBe("deepseek-v4-flash-vision-exp")
-    expect(built.metadata.permission_mode).toBe(resolvePresetDefaults("vision", forged.permission_mode).permission_mode)
+    const { code, message } = mappingErrorCode(() =>
+      buildBridgeRequestWithMetadata({ input: forged, content_blocks: STALE_CONTENT_BLOCKS }),
+    )
+    expect(code).toBe("VISION_PRESET_DISABLED")
+    expect(message).toContain("deepseek-flash")
+    expect(message).toContain("use explore")
+    expect(resolvePresetDefaults("vision").model).toBe("deepseek-flash")
   })
 
   test("explore with a redundant read-only override maps read-only (its preset default)", () => {
@@ -393,7 +316,7 @@ describe("mapping honors the schema-derived permission mode (fail closed)", () =
     const raw = validInput({ preset: "explore", prompt: PROMPT, cwd: TARGET_CWD })
     Object.assign(raw, { model: "gpt-4o", provider: "anthropic" })
     const built = buildBridgeRequestWithMetadata({ input: raw })
-    expect(built.request.model).toBe("deepseek-v4-flash")
+    expect(built.request.model).toBe("deepseek-flash")
     expect(built.request.provider).toBe("deepseek-official")
     expect(JSON.stringify(built.request)).not.toContain("gpt-4o")
     expect(JSON.stringify(built.request)).not.toContain("anthropic")
@@ -415,33 +338,10 @@ function mappingErrorCode(fn: () => unknown): { code: string; message: string } 
 }
 
 describe("preset mapping failure paths (guards fire before any helper spawn)", () => {
-  test("vision without resolved content_blocks fails closed and names the dropped image paths", () => {
-    const { code, message } = mappingErrorCode(() =>
-      buildBridgeRequest({
-        input: validInput({ preset: "vision", prompt: VISION_PROMPT, cwd: TARGET_CWD, images: IMAGE_PATHS }),
-      }),
-    )
-    expect(code).toBe("VISION_IMAGES_UNRESOLVED")
-    expect(message).toContain(IMAGE_PATHS[0])
-    expect(message).toContain(IMAGE_PATHS[1])
-    expect(message).toContain("prompt-only")
-  })
-
-  test("vision with admission output but still no content_blocks fails closed on the admitted paths", () => {
-    const { code, message } = mappingErrorCode(() =>
-      buildBridgeRequest({
-        input: validInput({ preset: "vision", prompt: VISION_PROMPT, cwd: TARGET_CWD, images: [IMAGE_PATHS[0]] }),
-        resolved_images: [{ path: IMAGE_PATHS[0] }],
-      }),
-    )
-    expect(code).toBe("VISION_IMAGES_UNRESOLVED")
-    expect(message).toContain(IMAGE_PATHS[0])
-  })
-
   test("empty content_blocks array is rejected (wire contract needs >= 1 block)", () => {
     const { code } = mappingErrorCode(() =>
       buildBridgeRequest({
-        input: validInput({ preset: "vision", prompt: VISION_PROMPT, cwd: TARGET_CWD, images: IMAGE_PATHS }),
+        input: validInput({ preset: "explore", prompt: PROMPT, cwd: TARGET_CWD }),
         content_blocks: [],
       }),
     )
@@ -451,33 +351,23 @@ describe("preset mapping failure paths (guards fire before any helper spawn)", (
   test("content_blocks with a block lacking a string type is rejected", () => {
     const { code } = mappingErrorCode(() =>
       buildBridgeRequest({
-        input: validInput({ preset: "vision", prompt: VISION_PROMPT, cwd: TARGET_CWD, images: IMAGE_PATHS }),
-        content_blocks: [{ path: IMAGE_PATHS[0] }] as unknown as { type: string }[],
+        input: validInput({ preset: "explore", prompt: PROMPT, cwd: TARGET_CWD }),
+        content_blocks: [{ path: "/tmp/diagram.png" }] as unknown as { type: string }[],
       }),
     )
     expect(code).toBe("INVALID_CONTENT_BLOCKS")
   })
 
-  test("content_blocks on a non-vision preset is rejected", () => {
+  test("content_blocks on any live preset is rejected (the vision route was removed)", () => {
     const { code, message } = mappingErrorCode(() =>
       buildBridgeRequest({
         input: validInput({ preset: "explore", prompt: PROMPT, cwd: TARGET_CWD }),
-        content_blocks: VISION_BLOCKS,
+        content_blocks: STALE_CONTENT_BLOCKS,
       }),
     )
     expect(code).toBe("BLOCKS_ON_TEXT_PRESET")
     expect(message).toContain("explore")
-  })
-
-  test("vision with both content_blocks and rendered_prompt is rejected as ambiguous", () => {
-    const { code } = mappingErrorCode(() =>
-      buildBridgeRequest({
-        input: validInput({ preset: "vision", prompt: VISION_PROMPT, cwd: TARGET_CWD, images: IMAGE_PATHS }),
-        rendered_prompt: VISION_PROMPT,
-        content_blocks: VISION_BLOCKS,
-      }),
-    )
-    expect(code).toBe("AMBIGUOUS_REQUEST_BODY")
+    expect(message).toContain("vision preset")
   })
 
   test("unrestricted without the confirmation token is rejected at the mapping layer (type makes it optional)", () => {

@@ -19,10 +19,10 @@
  *    builder. This module only maps the packet's *presence*
  *    (`metadata.has_context_packet`) and accepts the rendered text via
  *    `BuildBridgeRequestInput.rendered_prompt` — it never renders packets.
- *  - Vision images are admitted + assembled into content blocks by todo 9.
- *    This module exposes the {@link VisionImage} contract, signals unresolved
- *    images via a mapping-layer guard (never silently drops them into a
- *    prompt-only request), and passes pre-assembled blocks through verbatim.
+ *  - The vision preset is DISABLED (DeepSeek merged the image model into
+ *    deepseek-flash): a forged vision input is rejected here with
+ *    `VISION_PRESET_DISABLED`, and `content_blocks` is rejected on every live
+ *    preset so no image body can slip through as a prompt-only request.
  *  - The custom tool execute path is todo 7; nothing here spawns processes
  *    or touches the filesystem (path checks are the runner's preflight job).
  *
@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url"
 import { DEFAULT_PROVIDER, type DelegateRequest } from "../scripts/runner-lib.ts"
 import {
   UNRESTRICTED_CONFIRMATION_TOKEN,
+  VISION_PRESET_DEPRECATED_MESSAGE,
   resolvePresetDefaults,
   type DelegateInput,
   type DelegateModel,
@@ -44,8 +45,11 @@ import {
 /* Project-owned paths (resolved from this module's real location)     */
 /* ------------------------------------------------------------------ */
 
-/** Composition asset names; `base` = text presets, `vision` = image stack. */
-export const CORDIS_COMPOSITIONS = ["base", "vision"] as const
+/**
+ * Composition asset names. `vision` was removed with the model merge; the
+ * deprecated dsh/cordis/vision.cordis.yml file is retained but unmounted.
+ */
+export const CORDIS_COMPOSITIONS = ["base"] as const
 export type CordisComposition = (typeof CORDIS_COMPOSITIONS)[number]
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -75,14 +79,13 @@ export const CORDIS_CONFIG_DIR = join(PROJECT_ROOT, "dsh", "cordis")
 /** Absolute cordis.yml per composition. */
 export const CORDIS_CONFIG_PATH: Record<CordisComposition, string> = {
   base: join(CORDIS_CONFIG_DIR, "base.cordis.yml"),
-  vision: join(CORDIS_CONFIG_DIR, "vision.cordis.yml"),
 }
 
-/** Text presets mount the base (sandboxed) composition; vision mounts the image-aware one. */
+/** Every live preset mounts the base (sandboxed) composition; vision is rejected before mapping. */
 const COMPOSITION_BY_PRESET: Record<Preset, CordisComposition> = {
   explore: "base",
   write: "base",
-  vision: "vision",
+  vision: "base", // unreachable: the guard in buildBridgeRequestWithMetadata rejects vision first
   unrestricted: "base",
 }
 
@@ -105,20 +108,19 @@ export class PresetMappingError extends Error {
 }
 
 /**
- * One admitted image (todo 9 contract). `path` is the absolute location of a
- * file that passed admission (exists + supported mime type). The mapping
- * layer does NOT validate files — todo 9 does — but it requires vision images
- * to have been resolved into content blocks before a request is built.
+ * @deprecated The vision preset is disabled (image model merged into
+ * deepseek-flash). Retained only so stale callers passing
+ * `resolved_images` keep type-checking; metadata records declared image
+ * PATHS for the audit ledger, never image contents.
  */
 export interface VisionImage {
   path: string
 }
 
 /**
- * Minimal structural contract of a wire content block (mirrors the bridge's
- * `parseRequest` rule: a non-empty array of `{ type: string, ... }` records).
- * Todo 9 assembles these from `VisionImage`s + prompt text; the request body
- * can then carry text and image blocks together.
+ * Structural contract used ONLY to reject a stale `content_blocks` payload:
+ * content blocks were the vision path, which was removed. Every live preset
+ * takes a prompt.
  */
 export interface ContentBlockInput {
   type: string
@@ -127,15 +129,15 @@ export interface ContentBlockInput {
 
 /**
  * Everything the tool execute path (todo 7) hands the mapping: the validated
- * input plus the two outputs of adjacent todos that are NOT this module's job:
+ * input plus the write preset's rendered prompt.
  *  - `rendered_prompt`: todo 6 renders a write `context_packet` into this.
  *    When absent the caller's raw `input.prompt` is used verbatim.
- *  - `resolved_images` + `content_blocks`: todo 9 admission/assembly output.
+ *  - `resolved_images` / `content_blocks`: retained for stale callers only.
+ *    The vision mapping no longer exists, so any `content_blocks` payload is
+ *    rejected (`BLOCKS_ON_TEXT_PRESET`) and `resolved_images` only feeds the
+ *    declared-image-paths metadata.
  *
- * A mapped request body is EXACTLY ONE of `prompt` (explore / write /
- * unrestricted) or `content_blocks` (vision only), matching the bridge wire
- * contract: vision rejects a prompt-only body because its images would be
- * silently dropped.
+ * A mapped request body is always exactly one `prompt`.
  */
 export interface BuildBridgeRequestInput {
   /** Schema-validated delegate input (caller ran `deepseekDelegateInputSchema.safeParse`). */
@@ -148,8 +150,8 @@ export interface BuildBridgeRequestInput {
   /** Images that passed todo-9 admission, mirroring `input.images` as absolute paths. */
   resolved_images?: readonly VisionImage[]
   /**
-   * Pre-assembled content blocks (todo 9). REQUIRED for the vision preset;
-   * rejected on every other preset. Mutually exclusive with `rendered_prompt`.
+   * Retained only to REJECT stale payloads: content blocks were the vision
+   * path, which is removed (model merge). Any value here fails the mapping.
    */
   content_blocks?: readonly ContentBlockInput[]
 }
@@ -172,7 +174,7 @@ export interface BridgeMappingMetadata {
   cordis_config: string
   /** True when the write preset carried a `context_packet` (todo 6 must render it). */
   has_context_packet: boolean
-  /** True when the request body is `content_blocks` (the vision path). */
+  /** Always false: content blocks were the removed vision path (kept so metadata consumers stay stable). */
   uses_content_blocks: boolean
   /** Image paths declared for this call (admission output when present, else the raw input). */
   image_paths: readonly string[]
@@ -201,50 +203,23 @@ function declaredImagePaths(build: BuildBridgeRequestInput): readonly string[] {
 
 /**
  * Resolve the request body. Rules (fail closed, deterministic order):
- *  - `content_blocks` given on a non-vision preset            → error
  *  - `content_blocks` malformed (non-array / empty / bad row)  → error
- *  - vision with `content_blocks` AND `rendered_prompt`        → error
- *    (the wire contract takes exactly one of prompt/content_blocks; the
- *    text must be folded into the blocks by the assembly step)
- *  - vision without `content_blocks`                           → error
- *    (schema guarantees images exist; a prompt-only request would silently
- *    drop them — this is the todo-9 interface contract)
+ *  - `content_blocks` on any live preset                       → error
+ *    (the vision content-block path was removed with the model merge)
  *  - otherwise prompt = `rendered_prompt` ?? `input.prompt`.
  */
-function resolveBody(
-  build: BuildBridgeRequestInput,
-  preset: Preset,
-): { prompt?: string; content_blocks?: unknown[]; uses_content_blocks: boolean } {
+function resolveBody(build: BuildBridgeRequestInput): { prompt: string; uses_content_blocks: false } {
   const blocks = build.content_blocks
-  const hasBlocks = blocks !== undefined
-
-  if (hasBlocks) {
-    if (preset !== "vision") {
-      throw new PresetMappingError(
-        "BLOCKS_ON_TEXT_PRESET",
-        `preset "${preset}" takes a prompt, not content_blocks; only the vision preset maps images to content blocks`,
-      )
-    }
+  if (blocks !== undefined) {
     if (!Array.isArray(blocks) || blocks.length === 0 || !blocks.every(isBlock)) {
       throw new PresetMappingError(
         "INVALID_CONTENT_BLOCKS",
         "content_blocks must be a non-empty array of { type: string, ... } records (the wire contract the bridge validates)",
       )
     }
-    if (build.rendered_prompt !== undefined) {
-      throw new PresetMappingError(
-        "AMBIGUOUS_REQUEST_BODY",
-        'a vision mapping takes exactly one body: pass content_blocks (image admission/assembly output) XOR rendered_prompt; the wire contract allows exactly one of prompt/content_blocks',
-      )
-    }
-    return { content_blocks: [...blocks], uses_content_blocks: true }
-  }
-
-  if (preset === "vision") {
-    const paths = declaredImagePaths(build)
     throw new PresetMappingError(
-      "VISION_IMAGES_UNRESOLVED",
-      `preset "vision" requires content_blocks assembled from its images before the request can be built (declared images: ${paths.length === 0 ? "none" : paths.join(", ")}); refusing a prompt-only request that would silently drop the images`,
+      "BLOCKS_ON_TEXT_PRESET",
+      `preset "${build.input.preset}" takes a prompt, not content_blocks; the vision preset (the only content-block route) was removed when the image model merged into deepseek-flash`,
     )
   }
 
@@ -276,11 +251,17 @@ export function buildBridgeRequestWithMetadata(build: BuildBridgeRequestInput): 
     )
   }
 
+  // The vision preset is disabled: reject before any model/permission
+  // mapping, so a forged input can never select a model or mount a composition.
+  if (preset === "vision") {
+    throw new PresetMappingError("VISION_PRESET_DISABLED", VISION_PRESET_DEPRECATED_MESSAGE)
+  }
+
   // Model + permission_mode are derived exclusively from the schema's
   // capability matrix; resolvePresetDefaults fails closed on stray overrides.
   const defaults = resolvePresetDefaults(preset, input.permission_mode)
   const composition = COMPOSITION_BY_PRESET[preset]
-  const body = resolveBody(build, preset)
+  const body = resolveBody(build)
   const cwd = resolve(input.cwd)
   const cordisConfig = CORDIS_CONFIG_PATH[composition]
 
@@ -291,8 +272,7 @@ export function buildBridgeRequestWithMetadata(build: BuildBridgeRequestInput): 
     permission_mode: defaults.permission_mode,
     session_root: SESSION_ROOT,
     cordis_config: cordisConfig,
-    ...(body.prompt !== undefined ? { prompt: body.prompt } : {}),
-    ...(body.content_blocks !== undefined ? { content_blocks: body.content_blocks } : {}),
+    prompt: body.prompt,
     ...(input.session_id === undefined ? {} : { session_id: input.session_id }),
     ...(input.max_tokens === undefined ? {} : { max_tokens: input.max_tokens }),
     ...(input.timeout_ms === undefined ? {} : { timeout_ms: input.timeout_ms }),

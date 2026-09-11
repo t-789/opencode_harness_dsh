@@ -72,7 +72,7 @@ function completedOutput(jobId = 'bg_1234567890ab', overrides: Partial<DelegateO
     preset: 'explore',
     job_id: jobId,
     session_id: 'ses_audit_happy_1',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'read-only',
     final_response: 'The repo is a delegation harness.',
     finish_reason: 'completed',
@@ -85,7 +85,7 @@ function errorOutput(code: string, message: string, jobId?: string): DelegateOut
     status: 'error',
     preset: 'explore',
     ...(jobId === undefined ? {} : { job_id: jobId }),
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'read-only',
     error: { code, message },
   }
@@ -136,7 +136,7 @@ test('audit happy: writeAuditFromResult writes a valid, schema-clean record at t
   expect(record.cwd).toBe(CWD)
   expect(record.session_id).toBe('ses_audit_happy_1')
   expect(record.job_id).toBe('bg_1234567890ab')
-  expect(record.model).toBe('deepseek-v4-flash')
+  expect(record.model).toBe('deepseek-flash')
   expect(record.permission_mode).toBe('read-only')
   expect(record.image_paths).toEqual([])
   expect(record.context_hash).toMatch(/^[a-f0-9]{64}$/)
@@ -216,7 +216,7 @@ test('audit failure path: preflight rejection (unrestricted without token) still
   const gateOutput: DelegateOutput = {
     status: 'error',
     preset: 'unrestricted',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'danger-full-access',
     error: {
       code: 'SCHEMA_INVALID',
@@ -310,7 +310,7 @@ test('audit secrets: prompt/API-key material never reaches the file; hash + allo
   }
 })
 
-test('audit secrets: context_hash covers the effective body — vision blocks digest is stable and path-honest', () => {
+test('audit secrets: rejected vision input still records image PATHS only with a stable digest', () => {
   const dir = tmpDir()
   const pngPath = writePngFixture(dir)
   const visionInput: Record<string, unknown> = {
@@ -324,7 +324,7 @@ test('audit secrets: context_hash covers the effective body — vision blocks di
     preset: 'vision',
     job_id: 'bg_vision00001a',
     session_id: 'ses_audit_vision_1',
-    model: 'deepseek-v4-flash-vision-exp',
+    model: 'deepseek-flash',
     permission_mode: 'read-only',
     final_response: 'A tiny image.',
     finish_reason: 'completed',
@@ -374,7 +374,7 @@ test('audit unrestricted: verified unrestricted run has marker true; token strin
     preset: 'unrestricted',
     job_id: 'bg_unrestrict01',
     session_id: 'ses_audit_unrestricted_1',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'danger-full-access',
     final_response: 'done',
     finish_reason: 'completed',
@@ -409,7 +409,7 @@ test('audit unrestricted: marker stays false when the token is wrong (schema-rej
   const gateOutput: DelegateOutput = {
     status: 'error',
     preset: 'unrestricted',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'danger-full-access',
     error: { code: 'SCHEMA_INVALID', message: 'confirm_unrestricted mismatch' },
   }
@@ -475,7 +475,7 @@ test('audit background: run_in_background:true attempt record is written with th
     status: 'running',
     preset: 'explore',
     job_id: 'bg_bgstart0001a',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'read-only',
   }
   const path = writeAuditFromResult({ input, output: running, startedAt: new Date() }, { dir })

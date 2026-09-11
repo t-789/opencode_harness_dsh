@@ -16,19 +16,16 @@
  * It is only echoed from the job layer's terminal record, which the job
  * layer itself only ever marks completed when the delegate runner printed an
  * ok result line AND exited 0 (`src/jobs.ts` computeTerminalRecord). Every
- * output this module constructs itself — schema rejection, mapping/context/
- * vision guards, job-start failure, poll failure, deadline timeout, abort —
+ * output this module constructs itself — schema rejection, mapping/context
+ * guards, job-start failure, poll failure, deadline timeout, abort —
  * is status `error` (or `cancelled` via the cancel companion), never
  * `completed`. `finish_reason` from the runner is surfaced verbatim.
  *
  * Ownership notes:
  *  - Write preset: `buildWritePrompt` (src/context.ts) renders the context
  *    packet first; its `prompt` is passed as the mapping `rendered_prompt`
- *    seam. Vision preset: `resolveVisionInput` (src/vision.ts) admits images
- *    against the request cwd, `buildImageContentBlocks` assembles them, a
- *    leading `{ type: 'text', text: prompt }` block preserves text/image
- *    order, and the result is passed as the mapping `content_blocks` seam.
- *    Explore / unrestricted pass the caller prompt verbatim.
+ *    seam. Explore / unrestricted pass the caller prompt verbatim. Vision is
+ *    disabled (model merge) and is rejected before any body assembly.
  *  - `cwd` resolution against the opencode session directory happens in the
  *    tool wrapper (it owns ToolContext.directory); this core expects an
  *    already-resolved input but re-runs the schema defensively first.
@@ -46,6 +43,7 @@ import {
   deepseekDelegateInputSchema,
   deepseekDelegateOutputSchema,
   resolvePresetDefaults,
+  VISION_PRESET_DEPRECATED_MESSAGE,
   type DelegateError,
   type DelegateInput,
   type DelegateJob,
@@ -55,11 +53,11 @@ import {
 } from './schema.ts'
 import {
   DELEGATE_STATE_ROOT,
+  PresetMappingError,
   buildBridgeRequestWithMetadata,
   type BuiltBridgeRequest,
 } from './preset-map.ts'
 import { buildWritePrompt } from './context.ts'
-import { buildImageContentBlocks, resolveVisionInput } from './vision.ts'
 import type { JobOutputView, JobSpec } from './jobs.ts'
 
 /* ------------------------------------------------------------------ */
@@ -318,14 +316,14 @@ function previewTail(tail: string): string {
 
 /**
  * Build the bridge request for a schema-validated input:
- *  - write:        buildWritePrompt renders the packet (or auto-context
- *                  wrapper) → mapping `rendered_prompt` seam.
- *  - vision:       resolveVisionInput (against input.cwd) → image content
- *                  blocks with a leading text block → mapping `content_blocks`
- *                  seam.
- *  - explore/…:    unrestricted → caller prompt verbatim.
- * Throws PresetMappingError / ContextError / VisionInputError — all carry
- * `.code` and are redacted by the caller before surfacing.
+ *  - write:          buildWritePrompt renders the packet (or auto-context
+ *                    wrapper) → mapping `rendered_prompt` seam.
+ *  - explore / unrestricted: caller prompt verbatim.
+ *  - vision:         unreachable (the schema rejects it with the deprecation
+ *                    message); kept as an explicit case so the switch stays
+ *                    exhaustive and a forged object cannot slip through.
+ * Throws PresetMappingError / ContextError — all carry `.code` and are
+ * redacted by the caller before surfacing.
  */
 function buildMappedRequest(input: DelegateInput): BuiltBridgeRequest {
   switch (input.preset) {
@@ -337,29 +335,12 @@ function buildMappedRequest(input: DelegateInput): BuiltBridgeRequest {
       })
       return buildBridgeRequestWithMetadata({ input, rendered_prompt: built.prompt })
     }
-    case 'vision': {
-      // The schema guarantees >= 1 image for vision; this guard covers a
-      // forged object that somehow passed safeParse (defense in depth, same
-      // spirit as the mapping layer's own re-checks).
-      const imagePaths = input.images
-      if (imagePaths === undefined || imagePaths.length === 0) {
-        throw new Error('preset "vision" requires at least one image path (schema guarantees this; refusing a prompt-only request)')
-      }
-      const resolved = resolveVisionInput(imagePaths, input.cwd) // fs admission, absolute paths
-      // Leading text block preserves text/image order (the vision adapter
-      // expects the instruction alongside the images). Fresh object literals
-      // satisfy the mapping's ContentBlockInput index signature.
-      const blocks = [
-        { type: 'text' as const, text: input.prompt },
-        ...buildImageContentBlocks(resolved).map((block) => ({
-          type: block.type,
-          attachment: block.attachment,
-        })),
-      ]
-      return buildBridgeRequestWithMetadata({ input, resolved_images: resolved, content_blocks: blocks })
-    }
-    default:
-      // explore | unrestricted — caller prompt verbatim.
+    case 'vision':
+      // Defense in depth: the schema and the mapping boundary both reject
+      // vision; this case never assembles content blocks.
+      throw new PresetMappingError('VISION_PRESET_DISABLED', VISION_PRESET_DEPRECATED_MESSAGE)
+    case 'explore':
+    case 'unrestricted':
       return buildBridgeRequestWithMetadata({ input })
   }
 }

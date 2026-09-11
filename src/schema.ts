@@ -1,28 +1,39 @@
 /**
  * deepseek_delegate schema contracts and preset capability matrix.
  *
- * Four fixed presets (explore / write / vision / unrestricted). Callers can
- * never supply free-form `model`, `provider`, or `permission_mode` strings:
- * the input schema carries no model/provider fields at all, and
- * `permission_mode` is only accepted when it matches the preset's allowed set
- * (enforced by superRefine below). Runtime model ids and permission modes are
- * derived from the preset via `resolvePresetDefaults`.
+ * Three callable presets (explore / write / unrestricted) plus the disabled
+ * `vision` entry, which stays in {@link PRESETS} only so schema-parsing a
+ * legacy vision call fails with a precise deprecation message instead of a
+ * generic unknown-option error. Callers can never supply free-form `model`,
+ * `provider`, or `permission_mode` strings: the input schema carries no
+ * model/provider fields at all, and `permission_mode` is only accepted when
+ * it matches the preset's allowed set (enforced by superRefine below).
+ * Runtime model ids and permission modes are derived from the preset via
+ * `resolvePresetDefaults`.
  */
 import { z } from "zod"
 
 /** The exact per-call token required before `unrestricted` may run. */
 export const UNRESTRICTED_CONFIRMATION_TOKEN = "I_UNDERSTAND_DSH_DANGER_FULL_ACCESS"
 
-/** Fixed delegation presets. */
+/** Fixed delegation presets. "vision" is retained as a rejected deprecation entry. */
 export const PRESETS = ["explore", "write", "vision", "unrestricted"] as const
 export type Preset = (typeof PRESETS)[number]
+
+/**
+ * Deprecation message for the removed vision preset. DeepSeek merged the
+ * image model into `deepseek-flash`, so every vision call is rejected at
+ * the schema layer with this message.
+ */
+export const VISION_PRESET_DEPRECATED_MESSAGE =
+  'preset "vision" is disabled: the image model was merged into deepseek-flash; use explore for read-only analysis, write for implementation'
 
 /** DSH sandbox file-effect modes (network is outside v1 vocabulary). */
 export const PERMISSION_MODES = ["read-only", "workspace-write", "danger-full-access"] as const
 export type PermissionMode = (typeof PERMISSION_MODES)[number]
 
-/** Models the tool is allowed to compute for a preset. */
-export const DELEGATE_MODELS = ["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"] as const
+/** Models the tool is allowed to compute for a preset (the merged flash model). */
+export const DELEGATE_MODELS = ["deepseek-flash"] as const
 export type DelegateModel = (typeof DELEGATE_MODELS)[number]
 
 /** Lifecycle statuses shared by delegate results and persisted background jobs. */
@@ -73,7 +84,8 @@ function issue(
  *   explore      : permission_mode undefined|read-only; images forbidden; model fixed internally
  *   write        : permission_mode undefined|workspace-write; images forbidden; requires
  *                  context_packet OR allow_auto_context === true
- *   vision       : images required (>=1); permission_mode undefined|read-only|workspace-write
+ *   vision       : DISABLED (model merged into deepseek-flash); ANY call is rejected
+ *                  with the deprecation message. Kept in the enum for a precise error.
  *   unrestricted : confirm_unrestricted === UNRESTRICTED_CONFIRMATION_TOKEN; permission_mode
  *                  must be undefined (resolves to danger-full-access); images optional
  */
@@ -115,12 +127,7 @@ export const deepseekDelegateInputSchema = z
         }
         break
       case "vision":
-        if (permission_mode !== undefined && permission_mode === "danger-full-access") {
-          issue(ctx, ["permission_mode"], 'preset "vision" only allows permission_mode "read-only" or "workspace-write" (got "danger-full-access")')
-        }
-        if (images === undefined) {
-          issue(ctx, ["images"], 'preset "vision" requires at least one image')
-        }
+        issue(ctx, ["preset"], VISION_PRESET_DEPRECATED_MESSAGE)
         break
       case "unrestricted":
         if (permission_mode !== undefined) {
@@ -179,11 +186,11 @@ export interface PresetDefaults {
 
 /**
  * Deterministic preset -> runtime defaults:
- *   explore      -> deepseek-v4-flash,            read-only
- *   write        -> deepseek-v4-flash,            workspace-write
- *   vision       -> deepseek-v4-flash-vision-exp, read-only unless the caller
- *                  explicitly overrides with workspace-write
- *   unrestricted -> deepseek-v4-flash,            danger-full-access
+ *   explore      -> deepseek-flash, read-only
+ *   write        -> deepseek-flash, workspace-write
+ *   vision       -> deepseek-flash, read-only (DISABLED; kept schema-valid so
+ *                  rejection envelopes for legacy vision calls still parse)
+ *   unrestricted -> deepseek-flash, danger-full-access
  *
  * Overrides outside a preset's allowed set are schema-rejected upstream; this
  * function fails closed (keeps the preset default) if handed one anyway.
@@ -191,15 +198,15 @@ export interface PresetDefaults {
 export function resolvePresetDefaults(preset: Preset, permissionModeOverride?: PermissionMode): PresetDefaults {
   switch (preset) {
     case "explore":
-      return { model: "deepseek-v4-flash", permission_mode: "read-only" }
+      return { model: "deepseek-flash", permission_mode: "read-only" }
     case "write":
-      return { model: "deepseek-v4-flash", permission_mode: "workspace-write" }
-    case "vision": {
-      const permission_mode: PermissionMode =
-        permissionModeOverride === "workspace-write" ? "workspace-write" : "read-only"
-      return { model: "deepseek-v4-flash-vision-exp", permission_mode }
-    }
+      return { model: "deepseek-flash", permission_mode: "workspace-write" }
+    case "vision":
+      // Unreachable for execution: the schema and the mapping boundary reject
+      // vision. The merged model is returned here so rejected-vision output
+      // envelopes stay schema-valid; the old vision-exp model is gone.
+      return { model: "deepseek-flash", permission_mode: "read-only" }
     case "unrestricted":
-      return { model: "deepseek-v4-flash", permission_mode: "danger-full-access" }
+      return { model: "deepseek-flash", permission_mode: "danger-full-access" }
   }
 }

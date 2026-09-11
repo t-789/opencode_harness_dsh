@@ -43,6 +43,7 @@ import {
 } from '../src/delegate-execute.ts'
 import { JobError } from '../src/jobs.ts'
 import {
+  VISION_PRESET_DEPRECATED_MESSAGE,
   deepseekDelegateInputSchema,
   deepseekDelegateOutputSchema,
   type DelegateInput,
@@ -72,12 +73,10 @@ function exploreInput(overrides: Partial<DelegateInput> = {}): DelegateInput {
 function runningRecord(jobId = 'bg_1234567890ab', input: DelegateInput = exploreInput()): DelegateJob {
   const defaults =
     input.preset === 'unrestricted'
-      ? { model: 'deepseek-v4-flash', permission_mode: 'danger-full-access' as const }
-      : input.preset === 'vision'
-        ? { model: 'deepseek-v4-flash-vision-exp', permission_mode: 'read-only' as const }
-        : input.preset === 'write'
-          ? { model: 'deepseek-v4-flash', permission_mode: 'workspace-write' as const }
-          : { model: 'deepseek-v4-flash', permission_mode: 'read-only' as const }
+      ? { model: 'deepseek-flash', permission_mode: 'danger-full-access' as const }
+      : input.preset === 'write'
+        ? { model: 'deepseek-flash', permission_mode: 'workspace-write' as const }
+        : { model: 'deepseek-flash', permission_mode: 'read-only' as const }
   return {
     job_id: jobId,
     preset: input.preset,
@@ -96,7 +95,7 @@ function completedView(jobId = 'bg_1234567890ab'): { output: DelegateOutput; std
       preset: 'explore',
       job_id: jobId,
       session_id: 'ses_stub_completed_1',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       permission_mode: 'read-only',
       final_response: 'The repo is a delegation harness.'.repeat(400), // well over the cap
       finish_reason: 'completed',
@@ -112,7 +111,7 @@ function errorView(code: string, message: string, jobId = 'bg_1234567890ab'): { 
       status: 'error',
       preset: 'explore',
       job_id: jobId,
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       permission_mode: 'read-only',
       error: { code, message },
     },
@@ -147,7 +146,7 @@ test('runDelegate happy: stubbed ok result → structured completed output (sess
   expect(startedJobs).toHaveLength(1)
   expect(result.status).toBe('completed')
   expect(result.preset).toBe('explore')
-  expect(result.model).toBe('deepseek-v4-flash')
+  expect(result.model).toBe('deepseek-flash')
   expect(result.permission_mode).toBe('read-only')
   expect(result.job_id).toBe('bg_1234567890ab')
   expect(result.session_id).toBe('ses_stub_completed_1')
@@ -291,6 +290,34 @@ test('runDelegate gate: write without context packet or allow_auto_context → s
   expect(result.error?.message).toContain('context_packet')
 })
 
+test('runDelegate gate: vision preset → schema deprecation error BEFORE any job start', async () => {
+  const forged = {
+    preset: 'vision' as const,
+    prompt: 'describe this image',
+    cwd: CWD,
+    images: ['/tmp/mock.png'],
+  }
+  const result = await runDelegate(forged as unknown as DelegateInput, {
+    startJob: async () => {
+      throw new Error('startJob must never be called for a disabled vision run')
+    },
+    readOutput: async () => {
+      throw new Error('readOutput must never be called')
+    },
+    cancelJob: async () => {
+      throw new Error('cancelJob must never be called')
+    },
+  })
+
+  expectValidOutput(result)
+  expect(result.status).toBe('error')
+  expect(result.error?.code).toBe('SCHEMA_INVALID')
+  expect(result.error?.message).toContain(VISION_PRESET_DEPRECATED_MESSAGE)
+  // Identity stays schema-valid (merged model), and the removed route never appears.
+  expect(result.model).toBe('deepseek-flash')
+  expect(JSON.stringify(result)).not.toContain('vision-exp')
+})
+
 /* ------------------------------------------------------------------ */
 /* background start                                                    */
 /* ------------------------------------------------------------------ */
@@ -313,7 +340,7 @@ test('runDelegate background: run_in_background:true returns running immediately
   expect(result.status).toBe('running')
   expect(result.job_id).toBe('bg_abcdef012345')
   expect(result.preset).toBe('explore')
-  expect(result.model).toBe('deepseek-v4-flash')
+  expect(result.model).toBe('deepseek-flash')
   expect(result.permission_mode).toBe('read-only')
   expect(result.finish_reason).toBeUndefined()
   expect(result.error).toBeUndefined()
@@ -339,7 +366,7 @@ test('runDelegate sync: deadline exceeded → cancel called once and error TIMEO
             status: 'running',
             preset: 'explore',
             job_id: 'bg_timeout00001',
-            model: 'deepseek-v4-flash',
+            model: 'deepseek-flash',
             permission_mode: 'read-only',
           },
           stdout_tail: 'still working…',
@@ -384,7 +411,7 @@ test('runDelegate sync: caller abort → cancel called and structured ABORTED er
           status: 'running',
           preset: 'explore',
           job_id: 'bg_abort000001',
-          model: 'deepseek-v4-flash',
+          model: 'deepseek-flash',
           permission_mode: 'read-only',
         },
         stdout_tail: '',
@@ -424,7 +451,7 @@ test('companion output: running view then completed view (stubbed JobManager sta
             status: 'running',
             preset: 'explore',
             job_id: 'bg_1234567890ab',
-            model: 'deepseek-v4-flash',
+            model: 'deepseek-flash',
             permission_mode: 'read-only',
           },
           stdout_tail: 'progress… with sk-LIVE_SECRET_xyz9876543210 inside',
@@ -490,7 +517,7 @@ test('companion wait: running job resolves when terminal output appears', async 
               status: 'running',
               preset: 'explore',
               job_id: 'bg_wait00000001',
-              model: 'deepseek-v4-flash',
+              model: 'deepseek-flash',
               permission_mode: 'read-only',
             },
             stdout_tail: 'still working',
@@ -530,7 +557,7 @@ test('companion wait: timeout leaves background job running', async () => {
           status: 'running',
           preset: 'explore',
           job_id: 'bg_waittimeout1',
-          model: 'deepseek-v4-flash',
+          model: 'deepseek-flash',
           permission_mode: 'read-only',
         },
         stdout_tail: '',
@@ -600,22 +627,30 @@ test('companion cancel: terminal job → structured JOB_NOT_RUNNING ok:false', a
 /* wrapper wiring                                                      */
 /* ------------------------------------------------------------------ */
 
-test('wiring: default export is the tool backed by deepseekDelegateInputSchema; output/cancel exports exist', () => {
-  // The plugin's tool() is an identity wrapper, so the args object IS the
+test('wiring: default export is the tool backed by deepseekDelegateInputSchema (vision not callable); output/cancel exports exist', () => {
+  // The plugin's tool() is an identity wrapper, so the args object mirrors the
   // schema's raw shape — proving the exact schema powers the tool.
   expect(typeof defaultTool).toBe('object')
   expect(typeof defaultTool.description).toBe('string')
   expect(defaultTool.description.length).toBeGreaterThan(50)
+  expect(defaultTool.description).toContain('"vision" preset was removed')
   expect(typeof defaultTool.execute).toBe('function')
-  expect(defaultTool.args).toBe(deepseekDelegateInputSchema.shape)
   const shapeKeys = Object.keys(deepseekDelegateInputSchema.shape).sort()
   const argKeys = Object.keys(defaultTool.args).sort()
   expect(argKeys).toEqual(shapeKeys)
+  // Every field except `preset` is the exact schema field...
   for (const key of shapeKeys) {
+    if (key === 'preset') continue
     expect((defaultTool.args as Record<string, unknown>)[key]).toBe(
       (deepseekDelegateInputSchema.shape as Record<string, unknown>)[key],
     )
   }
+  // ...while `preset` exposes only the three callable presets (vision removed).
+  const presetArg = defaultTool.args.preset
+  expect(presetArg.safeParse('explore').success).toBe(true)
+  expect(presetArg.safeParse('write').success).toBe(true)
+  expect(presetArg.safeParse('unrestricted').success).toBe(true)
+  expect(presetArg.safeParse('vision').success).toBe(false)
 
   // Companion exports (opencode names them deepseek_delegate_output /
   // deepseek_delegate_cancel).
@@ -634,7 +669,7 @@ test('conciseOutput never fabricates completed and truncates long responses', ()
   const source: DelegateOutput = {
     status: 'completed',
     preset: 'explore',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     permission_mode: 'read-only',
     final_response: 'x'.repeat(10_000),
     finish_reason: 'max-tokens', // surfaced verbatim, never hidden

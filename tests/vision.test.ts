@@ -22,7 +22,7 @@ import {
   requiresWritePermission,
   resolveVisionInput,
 } from '../src/vision'
-import { deepseekDelegateInputSchema } from '../src/schema'
+import { VISION_PRESET_DEPRECATED_MESSAGE, deepseekDelegateInputSchema } from '../src/schema'
 
 /* ------------------------------------------------------------------ */
 /* Real tiny image fixtures (base64 constants)                          */
@@ -364,22 +364,7 @@ describe('permission gating', () => {
     expect(() => assertVisionPermissionAllowed('bogus')).toThrow()
   })
 
-  test('schema already rejects danger-full-access for vision preset (defense-in-depth)', () => {
-    const r = deepseekDelegateInputSchema.safeParse({
-      preset: 'vision',
-      prompt: 'describe',
-      cwd: '/tmp',
-      images: ['/tmp/x.png'],
-      permission_mode: 'danger-full-access',
-    })
-    expect(r.success).toBe(false)
-    if (!r.success) {
-      const msgs = r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
-      expect(msgs.some((m) => m.includes('danger-full-access'))).toBe(true)
-    }
-  })
-
-  test('schema accepts vision with workspace-write', () => {
+  test('schema rejects the disabled vision preset with the deprecation message (defense-in-depth)', () => {
     const r = deepseekDelegateInputSchema.safeParse({
       preset: 'vision',
       prompt: 'describe',
@@ -387,17 +372,11 @@ describe('permission gating', () => {
       images: ['/tmp/x.png'],
       permission_mode: 'workspace-write',
     })
-    expect(r.success).toBe(true)
-  })
-
-  test('schema accepts vision with default read-only (no permission_mode)', () => {
-    const r = deepseekDelegateInputSchema.safeParse({
-      preset: 'vision',
-      prompt: 'describe',
-      cwd: '/tmp',
-      images: ['/tmp/x.png'],
-    })
-    expect(r.success).toBe(true)
+    expect(r.success).toBe(false)
+    if (!r.success) {
+      const msgs = r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
+      expect(msgs.some((m) => m.includes(VISION_PRESET_DEPRECATED_MESSAGE))).toBe(true)
+    }
   })
 })
 

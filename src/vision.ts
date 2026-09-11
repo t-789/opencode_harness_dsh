@@ -1,4 +1,9 @@
 /**
+ * @deprecated The vision preset was disabled when DeepSeek merged the image
+ * model into `deepseek-flash`; no preset selects this module anymore. It is
+ * retained for a future re-enabled vision path, and its unit tests cover the
+ * module standalone.
+ *
  * Vision input admission and optional workspace-write permission handling for
  * the DeepSeek delegation tool (plan todo 9).
  *
@@ -349,9 +354,9 @@ export function buildImageContentBlocks(images: readonly ProbedImage[]): ImageCo
 /* ------------------------------------------------------------------ */
 
 /**
- * Permission modes relevant to vision delegation. The schema (todo 2) already
- * rejects `danger-full-access` for the `vision` preset via `superRefine`; this
- * function is a defense-in-depth runtime guard.
+ * Permission modes relevant to vision delegation. The vision preset is
+ * currently disabled, so the schema rejects every vision call; this guard is
+ * retained (defense-in-depth) for a future re-enabled vision path.
  */
 export const VISION_ALLOWED_PERMISSION_MODES = ['read-only', 'workspace-write'] as const
 export type VisionPermissionMode = (typeof VISION_ALLOWED_PERMISSION_MODES)[number]
@@ -397,7 +402,9 @@ export function assertVisionPermissionAllowed(permissionMode: string): void {
 /* ------------------------------------------------------------------ */
 
 /**
- * Metadata consumed by the audit writer (todo 10) for vision delegations.
+ * @deprecated Metadata for vision delegations. The audit writer now records
+ * image PATHS generically and no longer consumes this; retained for a future
+ * re-enabled vision path.
  * Captures each validated image's identity + whether write was requested.
  */
 export interface VisionAuditMetadata {

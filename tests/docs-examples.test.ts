@@ -5,9 +5,8 @@
  * fenced code block it carries under a json info-string is machine-checked here:
  *
  *   ```json delegate         tool arguments that MUST pass deepseekDelegateInputSchema
- *                            (one valid example per preset, sync + background, the
- *                            write context_packet and allow_auto_context forms, and
- *                            the vision image forms)
+ *                            (one valid example per callable preset, sync + background,
+ *                            the write context_packet and allow_auto_context forms)
  *   ```json delegate-invalid tool arguments that MUST be rejected (the documented
  *                            unrestricted-without-token and vague-write examples)
  *   ```json output           DelegateOutput envelopes that MUST pass
@@ -64,19 +63,25 @@ const invalidBlocks = fences("delegate-invalid")
 const outputBlocks = fences("output")
 const plainBlocks = fences(null)
 
-test("README documents valid examples for all four presets", () => {
+test("README documents valid examples for all three callable presets", () => {
   const presets = new Set<string>()
   for (const block of validBlocks) {
     const args = parseJson(block, "json delegate") as DelegateInput
     const parsed = deepseekDelegateInputSchema.safeParse(args)
     expect(
       parsed.success,
-      `README example must pass the schema, got: ${JSON.stringify(parsed.error?.issues ?? [])}\n${block}`,
+      `README example must pass the schema, got: ${JSON.stringify(parsed.error?.issues ?? [])}\n${block}`
     ).toBe(true)
     presets.add(String((parsed.data as DelegateInput).preset))
   }
-  expect(validBlocks.length).toBeGreaterThanOrEqual(7) // per-preset + background + auto-context + vision-write forms
-  expect([...presets].sort()).toEqual(["explore", "unrestricted", "vision", "write"])
+  expect(validBlocks.length).toBeGreaterThanOrEqual(6) // 3 presets + background + auto-context + follow-up forms
+  expect([...presets].sort()).toEqual(["explore", "unrestricted", "write"])
+})
+
+test("README documents the vision removal and the three-preset surface", () => {
+  expect(README_FLAT).toContain("vision was removed")
+  expect(README_FLAT).toContain("## The three presets")
+  expect(README_FLAT).not.toContain("## The four presets")
 })
 
 test("the valid unrestricted example carries the exact confirmation token", () => {
@@ -152,7 +157,7 @@ test("README states the v1 network limitation prominently", () => {
   expect(README_FLAT).toContain("Do not delegate tasks over sensitive networks expecting egress isolation")
   // The caveat must appear near the top, before the presets section.
   const caveatIndex = README_FLAT.indexOf("does NOT hard-block network access")
-  const presetsIndex = README_FLAT.indexOf("## The four presets")
+  const presetsIndex = README_FLAT.indexOf("## The three presets")
   expect(caveatIndex).toBeGreaterThan(-1)
   expect(presetsIndex).toBeGreaterThan(-1)
   expect(caveatIndex).toBeLessThan(presetsIndex)

@@ -164,7 +164,7 @@ test('parseRequestJson: defaults provider/model; rejects malformed input', () =>
     }),
   )
   expect(req.provider).toBe('deepseek-official')
-  expect(req.model).toBe('deepseek-v4-flash')
+  expect(req.model).toBe('deepseek-flash')
   expect(req.permission_mode).toBe('read-only') // default when absent
   expect(() => parseRequestJson('not json')).toThrow(RequestParseError)
   expect(() => parseRequest({ prompt: 'x' })).toThrow(RequestParseError) // missing required fields

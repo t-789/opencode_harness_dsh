@@ -4,7 +4,9 @@
  */
 import { describe, expect, test } from "bun:test"
 import {
+  DELEGATE_MODELS,
   UNRESTRICTED_CONFIRMATION_TOKEN,
+  VISION_PRESET_DEPRECATED_MESSAGE,
   deepseekDelegateInputSchema,
   deepseekDelegateOutputSchema,
   delegateJobSchema,
@@ -27,7 +29,7 @@ function rejectionMessages(r: { success: boolean; error?: { issues: { path: Prop
   return (r.error?.issues ?? []).map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
 }
 
-describe("happy paths — one canonical valid request per preset", () => {
+describe("happy paths — one canonical valid request per callable preset", () => {
   test("explore: plain request parses; no context/images/permission needed", () => {
     const r = deepseekDelegateInputSchema.safeParse({ preset: "explore", ...base })
     expect(r.success).toBe(true)
@@ -40,21 +42,6 @@ describe("happy paths — one canonical valid request per preset", () => {
 
   test("write: without context_packet but allow_auto_context: true parses", () => {
     const r = deepseekDelegateInputSchema.safeParse({ preset: "write", ...base, allow_auto_context: true })
-    expect(r.success).toBe(true)
-  })
-
-  test("vision: with images parses (default read-only)", () => {
-    const r = deepseekDelegateInputSchema.safeParse({ preset: "vision", ...base, images: ["/tmp/mock.png"] })
-    expect(r.success).toBe(true)
-  })
-
-  test("vision: workspace-write override parses", () => {
-    const r = deepseekDelegateInputSchema.safeParse({
-      preset: "vision",
-      ...base,
-      images: ["/tmp/mock.png"],
-      permission_mode: "workspace-write",
-    })
     expect(r.success).toBe(true)
   })
 
@@ -81,34 +68,37 @@ describe("happy paths — one canonical valid request per preset", () => {
 })
 
 describe("resolvePresetDefaults capability matrix", () => {
-  test("explore -> deepseek-v4-flash / read-only", () => {
-    expect(resolvePresetDefaults("explore")).toEqual({ model: "deepseek-v4-flash", permission_mode: "read-only" })
+  test("explore -> deepseek-flash / read-only", () => {
+    expect(resolvePresetDefaults("explore")).toEqual({ model: "deepseek-flash", permission_mode: "read-only" })
   })
 
-  test("write -> deepseek-v4-flash / workspace-write", () => {
-    expect(resolvePresetDefaults("write")).toEqual({ model: "deepseek-v4-flash", permission_mode: "workspace-write" })
+  test("write -> deepseek-flash / workspace-write", () => {
+    expect(resolvePresetDefaults("write")).toEqual({ model: "deepseek-flash", permission_mode: "workspace-write" })
   })
 
-  test("vision -> deepseek-v4-flash-vision-exp / read-only by default, workspace-write on explicit override", () => {
+  test("vision is disabled: defaults stay schema-valid (flash/read-only) and never the removed vision-exp route", () => {
     expect(resolvePresetDefaults("vision")).toEqual({
-      model: "deepseek-v4-flash-vision-exp",
+      model: "deepseek-flash",
       permission_mode: "read-only",
     })
-    expect(resolvePresetDefaults("vision", "read-only")).toEqual({
-      model: "deepseek-v4-flash-vision-exp",
-      permission_mode: "read-only",
-    })
-    expect(resolvePresetDefaults("vision", "workspace-write")).toEqual({
-      model: "deepseek-v4-flash-vision-exp",
-      permission_mode: "workspace-write",
-    })
+    // A forged override still cannot reach the removed image route.
+    expect(resolvePresetDefaults("vision", "workspace-write").model).toBe("deepseek-flash")
+    expect(resolvePresetDefaults("vision", "danger-full-access").model).toBe("deepseek-flash")
   })
 
-  test("unrestricted -> deepseek-v4-flash / danger-full-access", () => {
+  test("unrestricted -> deepseek-flash / danger-full-access", () => {
     expect(resolvePresetDefaults("unrestricted")).toEqual({
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       permission_mode: "danger-full-access",
     })
+  })
+
+  test("every callable preset resolves the single deepseek-flash route; DELEGATE_MODELS has length 1", () => {
+    expect(DELEGATE_MODELS).toHaveLength(1)
+    expect([...DELEGATE_MODELS]).toEqual(["deepseek-flash"])
+    for (const preset of ["explore", "write", "unrestricted"] as const) {
+      expect(resolvePresetDefaults(preset).model).toBe("deepseek-flash")
+    }
   })
 })
 
@@ -140,16 +130,22 @@ describe("failure paths — schema-level matrix enforcement", () => {
     expect(r.success).toBe(false)
   })
 
-  test("vision without images is rejected", () => {
-    const r = deepseekDelegateInputSchema.safeParse({ preset: "vision", ...base })
-    expect(r.success).toBe(false)
-    const msgs = rejectionMessages(r)
-    expect(msgs.join("\n")).toContain("images")
-  })
-
-  test("vision with an empty images array is rejected", () => {
-    const r = deepseekDelegateInputSchema.safeParse({ preset: "vision", ...base, images: [] })
-    expect(r.success).toBe(false)
+  test('vision preset is disabled: any call is rejected with the deprecation message', () => {
+    const withImages = deepseekDelegateInputSchema.safeParse({ preset: "vision", ...base, images: ["/tmp/x.png"] })
+    expect(withImages.success).toBe(false)
+    const msgs = rejectionMessages(withImages).join("\n")
+    expect(msgs).toContain("preset")
+    expect(msgs).toContain(VISION_PRESET_DEPRECATED_MESSAGE)
+    expect(msgs).toContain("deepseek-flash")
+    expect(msgs).toContain("use explore")
+    expect(msgs).toContain("write for implementation")
+    // "Any vision call" includes the legacy no-images and empty-images forms.
+    const noImages = deepseekDelegateInputSchema.safeParse({ preset: "vision", ...base })
+    expect(noImages.success).toBe(false)
+    expect(rejectionMessages(noImages).join("\n")).toContain(VISION_PRESET_DEPRECATED_MESSAGE)
+    const emptyImages = deepseekDelegateInputSchema.safeParse({ preset: "vision", ...base, images: [] })
+    expect(emptyImages.success).toBe(false)
+    expect(rejectionMessages(emptyImages).join("\n")).toContain(VISION_PRESET_DEPRECATED_MESSAGE)
   })
 
   test("write without context_packet and without allow_auto_context is rejected", () => {
@@ -185,18 +181,6 @@ describe("failure paths — schema-level matrix enforcement", () => {
     expect(msgs.join("\n")).toContain("permission_mode")
   })
 
-  test("vision with permission_mode danger-full-access is rejected", () => {
-    const r = deepseekDelegateInputSchema.safeParse({
-      preset: "vision",
-      ...base,
-      images: ["/tmp/x.png"],
-      permission_mode: "danger-full-access",
-    })
-    expect(r.success).toBe(false)
-    const msgs = rejectionMessages(r)
-    expect(msgs.join("\n")).toContain("permission_mode")
-  })
-
   test("unrestricted with caller-supplied permission_mode is rejected (resolves internally)", () => {
     const r = deepseekDelegateInputSchema.safeParse({
       preset: "unrestricted",
@@ -219,7 +203,7 @@ describe("output and job schemas", () => {
       status: "completed",
       preset: "explore",
       session_id: "ses_1",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       permission_mode: "read-only",
       final_response: "summary",
       finish_reason: "complete",
@@ -232,7 +216,7 @@ describe("output and job schemas", () => {
     const r = deepseekDelegateOutputSchema.safeParse({
       status: "error",
       preset: "unrestricted",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       permission_mode: "danger-full-access",
       error: { code: "PREFLIGHT_REJECTED", message: "no token" },
     })
@@ -247,7 +231,7 @@ describe("output and job schemas", () => {
       cwd: base.cwd,
       session_id: "ses_1",
       status: "running",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       permission_mode: "workspace-write",
       pid: 4242,
     })
@@ -261,7 +245,7 @@ describe("output and job schemas", () => {
       created_at: "not-a-date",
       cwd: base.cwd,
       status: "running",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       permission_mode: "workspace-write",
     })
     expect(r.success).toBe(false)

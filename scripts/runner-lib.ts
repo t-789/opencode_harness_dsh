@@ -138,7 +138,7 @@ export interface DelegateRequest {
   cwd: string
   /** Provider route; default `deepseek-official`. */
   provider: string
-  /** Model id; default `deepseek-v4-flash`. */
+  /** Model id; default `deepseek-flash`. */
   model: string
   /** Optional output-token cap. */
   max_tokens?: number
@@ -153,7 +153,7 @@ export interface DelegateRequest {
 }
 
 export const DEFAULT_PROVIDER = 'deepseek-official'
-export const DEFAULT_MODEL = 'deepseek-v4-flash'
+export const DEFAULT_MODEL = 'deepseek-flash'
 export const DEFAULT_PERMISSION_MODE = 'read-only'
 
 /** File-effect permission modes the runtime sandbox policy accepts. */

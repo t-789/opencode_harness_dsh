@@ -41,15 +41,11 @@
  * approximate):
  *  - explore / unrestricted: the caller prompt verbatim;
  *  - write: `buildWritePrompt` output (the rendered packet or the
- *    auto-context wrapper) when the packet is present/usable;
- *  - vision: the assembled content blocks (`{type:'text'}` + image blocks)
- *    when the images still pass admission; per-image byte reads are capped
- *    (4 MiB) so a huge attachment cannot balloon the audit pass.
- * Any reconstruction failure (file vanished mid-run, forged unrenderable
- * packet, over-budget image) falls back to a hash of what was DECLARED
- * (`{ prompt, context_packet?, images? }`) — the record is then honest about
- * the attempt, not the wire body. Hashing is one-way: secrets inside the
- * prompt never appear in the record.
+ *    auto-context wrapper) when the packet is present/usable.
+ * Any reconstruction failure (forged unrenderable packet) falls back to a hash
+ * of what was DECLARED (`{ prompt, context_packet? }`) — the record is then
+ * honest about the attempt, not the wire body. Hashing is one-way: secrets
+ * inside the prompt never appear in the record.
  *
  * ## Unrestricted marker
  *
@@ -90,7 +86,6 @@ import {
   type PermissionMode,
   type Preset,
 } from './schema.ts'
-import { buildImageContentBlocks, resolveVisionInput } from './vision.ts'
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -110,12 +105,6 @@ export const AUDIT_ERROR_MESSAGE_MAX_CHARS = 2000
 /** Truncation marker appended whenever a capped field is cut. */
 export const AUDIT_TRUNCATION_MARKER = '... [truncated]'
 
-/**
- * Per-image byte cap for the vision context-hash reconstruction (see module
- * docs): beyond this, the audit degrades to hashing the DECLARED paths
- * instead of reading the file body again.
- */
-export const AUDIT_VISION_HASH_MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 /** Background job ids look like `bg_<hex>` (mirrors src/jobs.ts). */
 const JOB_ID_PATTERN = /^bg_[a-zA-Z0-9]{8,64}$/
@@ -180,7 +169,7 @@ export const auditRecordSchema = z.strictObject({
   /** True when the call asked for the background job lifecycle. */
   run_in_background: z.boolean(),
   /**
-   * v1 marker on EVERY record: explore/write/vision confine FILE effects,
+   * v1 marker on EVERY record: explore/write confine FILE effects,
    * but v1 does NOT hard-block network access from the delegated agent.
    * A literal `true` — it cannot be recorded as anything else.
    */
@@ -287,7 +276,6 @@ function resolveDeclaredPaths(images: readonly string[], cwd: string): string[] 
 function effectiveContextMaterial(input: Record<string, unknown>): unknown {
   const preset = typeof input.preset === 'string' ? input.preset : ''
   const prompt = typeof input.prompt === 'string' ? input.prompt : ''
-  const cwd = typeof input.cwd === 'string' ? input.cwd : ''
 
   if (preset === 'write') {
     const declared = input.context_packet
@@ -311,33 +299,6 @@ function effectiveContextMaterial(input: Record<string, unknown>): unknown {
         }
       }
       return { prompt, context_packet: declared }
-    }
-    return { prompt }
-  }
-
-  if (preset === 'vision') {
-    const declared = Array.isArray(input.images)
-      ? input.images.filter((entry): entry is string => typeof entry === 'string')
-      : []
-    if (declared.length > 0) {
-      try {
-        const resolved = resolveVisionInput(declared, cwd)
-        // Cap per-image byte reads: over-budget images fall back to the
-        // declared-path hash instead of being re-read wholesale.
-        if (resolved.every((image) => image.bytes <= AUDIT_VISION_HASH_MAX_IMAGE_BYTES)) {
-          const blocks = [
-            { type: 'text' as const, text: prompt },
-            ...buildImageContentBlocks(resolved).map((block) => ({
-              type: block.type,
-              attachment: block.attachment,
-            })),
-          ]
-          return { content_blocks: blocks }
-        }
-      } catch {
-        // Image vanished/failed admission mid-run: hash the declared paths.
-      }
-      return { prompt, images: resolveDeclaredPaths(declared, cwd) }
     }
     return { prompt }
   }
